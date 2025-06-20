@@ -38,7 +38,7 @@ export function ProfilePage() {
                 <span className="text-pixel-black text-pixel-lg font-bold">JD</span>
               </div>
               <h2 className="text-pixel-lg font-bold text-pixel-primary mb-1 uppercase tracking-wider">John Doe</h2>
-              <p className="text-pixel-accent font-bold text-pixel-sm uppercase">Strategy Master</p>
+              <p className="text-pixel-accent font-bold text-pixel-sm uppercase">Player Zero</p>
             </div>
             
             <div className="space-y-3">

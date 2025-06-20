@@ -20,7 +20,7 @@ export function Header({ currentPage, onNavigate }: HeaderProps) {
           <div className="flex items-center justify-center w-10 h-10 bg-pixel-primary pixel-avatar">
             <Sword className="w-6 h-6 text-pixel-black" />
           </div>
-          <h1 className="text-pixel-lg font-bold text-pixel-primary uppercase tracking-wider">Strategy Clash</h1>
+          <h1 className="text-pixel-lg font-bold text-pixel-primary uppercase tracking-wider">Player Zero</h1>
         </div>
 
         <nav className="flex items-center space-x-2">

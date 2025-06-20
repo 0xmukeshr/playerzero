@@ -17,7 +17,7 @@ export function GameInterface({ gameId, onExitGame }: GameInterfaceProps) {
   const [gameState, setGameState] = useState<GameState>({
     currentRound: 5,
     maxRounds: 20,
-    timeRemaining: { hours: 0, minutes: 2, seconds: 30 },
+    timeRemaining: { hours: 0, minutes: 1, seconds: 0 },
     currentPlayer: {
       id: 'current',
       name: 'You',
@@ -43,6 +43,25 @@ export function GameInterface({ gameId, onExitGame }: GameInterfaceProps) {
       'Elena Rodriguez burned 3 Gold to boost market price'
     ]
   });
+
+  // Store actions by round for historical viewing
+  const [actionsByRound, setActionsByRound] = useState<{ [round: number]: string[] }>({
+    4: [
+      'Alex Chen sold 15 Gold for 150 tokens',
+      'Sarah Kim bought 8 Water for 120 tokens',
+      'Marcus Johnson burned 2 Oil to boost price',
+      'Elena Rodriguez sabotaged Alex\'s Water'
+    ],
+    3: [
+      'Sarah Kim bought 12 Gold for 120 tokens',
+      'Elena Rodriguez sold 6 Oil for 150 tokens',
+      'Alex Chen burned 1 Water to boost price',
+      'Marcus Johnson bought 5 Gold for 50 tokens'
+    ]
+  });
+
+  // Track which players have acted this round
+  const [playersActedThisRound, setPlayersActedThisRound] = useState<Set<string>>(new Set());
 
   const [selectedAction, setSelectedAction] = useState<Action['type']>('buy');
   const [selectedResource, setSelectedResource] = useState<'gold' | 'water' | 'oil'>('gold');
@@ -137,7 +156,7 @@ export function GameInterface({ gameId, onExitGame }: GameInterfaceProps) {
           ...prev,
           players: newPlayers,
           marketChanges: newMarketChanges,
-          recentActions: actionText ? [actionText, ...prev.recentActions.slice(0, 4)] : prev.recentActions
+          recentActions: actionText && prev.recentActions.length < 4 ? [actionText, ...prev.recentActions] : prev.recentActions
         };
       });
     }, 8000); // Player action every 8 seconds
@@ -187,11 +206,56 @@ export function GameInterface({ gameId, onExitGame }: GameInterfaceProps) {
           newHours -= 1;
         }
         if (newHours < 0) {
-          // Round ended, reset timer and advance round
+          // Round ended, store current actions and advance round
+          setActionsByRound(prevActions => ({
+            ...prevActions,
+            [prev.currentRound]: [...prev.recentActions]
+          }));
+          
+          // Calculate new asset values based on market trends
+          const updatePlayerAssetValues = (player: any) => {
+            const baseValues = { gold: 10, water: 15, oil: 25 };
+            let updatedAssets = { ...player.assets };
+            let totalValue = 0;
+            
+            // Apply market changes to asset values
+            prev.marketChanges.forEach(market => {
+              const marketMultiplier = 1 + (market.change / 100);
+              const assetCount = updatedAssets[market.resource];
+              const newValue = Math.floor(baseValues[market.resource] * marketMultiplier * assetCount);
+              totalValue += newValue;
+            });
+            
+            return {
+              ...player,
+              assets: updatedAssets,
+              totalAssets: player.assets.gold + player.assets.water + player.assets.oil
+            };
+          };
+          
+          // Generate new market trends for next round
+          const generateNewMarketTrends = () => {
+            return prev.marketChanges.map(change => {
+              const randomChange = Math.floor(Math.random() * 40) - 20; // -20% to +20%
+              return {
+                ...change,
+                change: randomChange,
+                percentage: `${randomChange > 0 ? '+' : ''}${randomChange}%`
+              };
+            });
+          };
+          
+          // Clear player tracking for new round
+          setPlayersActedThisRound(new Set());
+          
           return {
             ...prev,
             currentRound: prev.currentRound + 1,
-            timeRemaining: { hours: 0, minutes: 2, seconds: 30 }
+            timeRemaining: { hours: 0, minutes: 1, seconds: 0 }, // Reset to 1 minute
+            recentActions: [], // Clear actions for new round
+            marketChanges: generateNewMarketTrends(), // Update market trends
+            currentPlayer: updatePlayerAssetValues(prev.currentPlayer),
+            players: prev.players.map(updatePlayerAssetValues)
           };
         }
 
@@ -302,10 +366,10 @@ export function GameInterface({ gameId, onExitGame }: GameInterfaceProps) {
         newState.currentPlayer.assets.water + 
         newState.currentPlayer.assets.oil;
 
-      // Add action to recent actions
-      if (actionText) {
-        newState.recentActions = [actionText, ...prev.recentActions.slice(0, 4)];
-      }
+        // Add action to recent actions (max 4 per round - 1 per player)
+        if (actionText && prev.recentActions.length < 4) {
+          newState.recentActions = [actionText, ...prev.recentActions];
+        }
 
       return newState;
     });
@@ -340,7 +404,12 @@ export function GameInterface({ gameId, onExitGame }: GameInterfaceProps) {
             <Timer timeRemaining={gameState.timeRemaining} />
             <AssetsList assets={gameState.currentPlayer.assets} />
             <MarketChanges changes={gameState.marketChanges} />
-            <RecentActions actions={gameState.recentActions} currentRound={gameState.currentRound} maxRounds={gameState.maxRounds} />
+            <RecentActions 
+              actions={gameState.recentActions} 
+              currentRound={gameState.currentRound} 
+              maxRounds={gameState.maxRounds} 
+              actionsByRound={actionsByRound}
+            />
           </div>
 
           {/* Middle Column - Player Info */}
