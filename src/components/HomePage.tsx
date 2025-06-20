@@ -34,7 +34,7 @@ export function HomePage({ onNavigateToGames }: HomePageProps) {
       {/* Hero Section */}
       <div className="text-center mb-16">
         <h1 className="text-pixel-3xl font-bold text-pixel-primary mb-8 uppercase tracking-wider">
-          Welcome to <span className="text-pixel-accent animate-bounce-pixel">Strategy Clash</span>
+          Welcome <span className="text-pixel-accent animate-bounce-pixel">Player Zero</span>
         </h1>
         <p className="text-pixel-base text-pixel-light-gray mb-8 max-w-2xl mx-auto leading-relaxed">
           Master the art of strategic warfare in intense multiplayer battles. 

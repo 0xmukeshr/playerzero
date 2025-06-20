@@ -50,9 +50,6 @@ export function RecentActions({ actions, currentRound, maxRounds, actionsByRound
               </option>
             ))}
           </select>
-          <div className="text-pixel-xs text-pixel-primary font-bold whitespace-nowrap">
-            {displayActions.length} actions
-          </div>
         </div>
         
         {/* Actions in wider grid layout */}
