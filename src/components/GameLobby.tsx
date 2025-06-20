@@ -12,9 +12,13 @@ interface GameLobbyProps {
 
 export function GameLobby({ games, onJoinGame, onViewGame, onStartNewGame, onPlayGame, onCreateGame }: GameLobbyProps) {
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showJoinModal, setShowJoinModal] = useState(false);
   const [gameName, setGameName] = useState('');
+  const [gameType, setGameType] = useState<'public' | 'private'>('public');
   const [createdGameId, setCreatedGameId] = useState<string | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [joinGameId, setJoinGameId] = useState('');
+  const [joinError, setJoinError] = useState(false);
 
   const generateGameId = () => {
     return Math.random().toString(36).substr(2, 9).toUpperCase();
@@ -37,6 +41,21 @@ export function GameLobby({ games, onJoinGame, onViewGame, onStartNewGame, onPla
     }
   };
 
+  const handleJoinById = () => {
+    if (joinGameId.trim()) {
+      // Simulate checking if game exists (in real app, this would be an API call)
+      const gameExists = games.some(game => game.id === joinGameId.trim());
+      
+      if (gameExists) {
+        onJoinGame(joinGameId.trim());
+        handleCloseJoinModal();
+      } else {
+        setJoinError(true);
+        setTimeout(() => setJoinError(false), 3000); // Reset error after 3 seconds
+      }
+    }
+  };
+
   const handleCopyGameId = async () => {
     if (createdGameId) {
       try {
@@ -53,7 +72,14 @@ export function GameLobby({ games, onJoinGame, onViewGame, onStartNewGame, onPla
     setShowCreateModal(false);
     setCreatedGameId(null);
     setGameName('');
+    setGameType('public');
     setCopySuccess(false);
+  };
+
+  const handleCloseJoinModal = () => {
+    setShowJoinModal(false);
+    setJoinGameId('');
+    setJoinError(false);
   };
   const getStatusColor = (status: Game['status']) => {
     switch (status) {
@@ -131,7 +157,13 @@ export function GameLobby({ games, onJoinGame, onViewGame, onStartNewGame, onPla
         </div>
       </div>
 
-      <div className="flex justify-end mt-8">
+      <div className="flex justify-between items-center mt-8">
+        <button
+          onClick={() => setShowJoinModal(true)}
+          className="px-6 py-3 bg-pixel-accent hover:bg-pixel-success text-pixel-black font-bold text-pixel-base pixel-btn border-pixel-black uppercase tracking-wider"
+        >
+          Join by ID
+        </button>
         <button
           onClick={handleStartGame}
           className="px-8 py-3 bg-pixel-secondary hover:bg-pixel-warning text-pixel-black font-bold text-pixel-lg pixel-btn border-pixel-black uppercase tracking-wider"
@@ -155,9 +187,42 @@ export function GameLobby({ games, onJoinGame, onViewGame, onStartNewGame, onPla
                   value={gameName}
                   onChange={(e) => setGameName(e.target.value)}
                   placeholder="Enter game name"
-                  className="w-full px-4 py-3 text-pixel-base font-bold bg-pixel-dark-gray text-pixel-base-gray border-4 border-pixel-gray focus:border-pixel-primary focus:outline-none mb-6"
+                  className="w-full px-4 py-3 text-pixel-base font-bold bg-pixel-dark-gray text-pixel-base-gray border-4 border-pixel-gray focus:border-pixel-primary focus:outline-none mb-4"
                   maxLength={30}
                 />
+                
+                {/* Game Type Selection */}
+                <div className="mb-6">
+                  <p className="text-pixel-sm font-bold text-pixel-primary mb-3 uppercase tracking-wider text-center">
+                    Game Type
+                  </p>
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={() => setGameType('public')}
+                      className={`flex-1 px-4 py-3 font-bold text-pixel-sm pixel-btn uppercase tracking-wider ${
+                        gameType === 'public'
+                          ? 'bg-pixel-success text-pixel-black border-pixel-black'
+                          : 'bg-pixel-gray hover:bg-pixel-light-gray text-pixel-primary border-pixel-gray'
+                      }`}
+                    >
+                      Public
+                    </button>
+                    <button
+                      onClick={() => setGameType('private')}
+                      className={`flex-1 px-4 py-3 font-bold text-pixel-sm pixel-btn uppercase tracking-wider ${
+                        gameType === 'private'
+                          ? 'bg-pixel-warning text-pixel-black border-pixel-black'
+                          : 'bg-pixel-gray hover:bg-pixel-light-gray text-pixel-primary border-pixel-gray'
+                      }`}
+                    >
+                      Private
+                    </button>
+                  </div>
+                  <p className="text-pixel-xs text-pixel-base-gray mt-2 text-center">
+                    {gameType === 'public' ? 'Anyone can join this game' : 'Only players with ID can join'}
+                  </p>
+                </div>
+                
                 <div className="flex space-x-4">
                   <button
                     onClick={handleCreateGame}
@@ -206,6 +271,69 @@ export function GameLobby({ games, onJoinGame, onViewGame, onStartNewGame, onPla
                 </button>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Join by ID Modal */}
+      {showJoinModal && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-75 z-50">
+          <div className={`p-8 pixel-panel max-w-md w-full mx-4 ${
+            joinError ? 'bg-pixel-error border-pixel-error' : 'bg-pixel-light-gray border-pixel-black'
+          }`}>
+            <h3 className={`text-pixel-xl font-bold text-center mb-6 uppercase tracking-wider ${
+              joinError ? 'text-pixel-black' : 'text-pixel-primary'
+            }`}>
+              {joinError ? 'Game Not Found!' : 'Join by Game ID'}
+            </h3>
+            
+            <input
+              type="text"
+              value={joinGameId}
+              onChange={(e) => {
+                setJoinGameId(e.target.value.toUpperCase());
+                if (joinError) setJoinError(false); // Reset error when typing
+              }}
+              placeholder="Enter Game ID"
+              className={`w-full px-4 py-3 text-pixel-base font-bold border-4 focus:outline-none mb-6 uppercase tracking-wider text-center ${
+                joinError 
+                  ? 'bg-pixel-dark-gray text-pixel-error border-pixel-error focus:border-pixel-error'
+                  : 'bg-pixel-dark-gray text-pixel-base-gray border-pixel-gray focus:border-pixel-primary'
+              }`}
+              maxLength={9}
+            />
+            
+            {joinError && (
+              <div className="bg-pixel-black p-3 pixel-panel border-pixel-error mb-4">
+                <p className="text-pixel-error text-pixel-sm font-bold text-center uppercase tracking-wider">
+                  Game ID not found. Please check and try again.
+                </p>
+              </div>
+            )}
+            
+            <div className="flex space-x-4">
+              <button
+                onClick={handleJoinById}
+                disabled={!joinGameId.trim()}
+                className={`flex-1 px-6 py-3 font-bold text-pixel-base pixel-btn uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed ${
+                  joinError
+                    ? 'bg-pixel-black hover:bg-pixel-dark-gray text-pixel-error border-pixel-error'
+                    : 'bg-pixel-primary hover:bg-pixel-success text-pixel-black border-pixel-black'
+                }`}
+              >
+                Join Game
+              </button>
+              <button
+                onClick={handleCloseJoinModal}
+                className={`flex-1 px-6 py-3 font-bold text-pixel-base pixel-btn uppercase tracking-wider ${
+                  joinError
+                    ? 'bg-pixel-dark-gray hover:bg-pixel-gray text-pixel-error border-pixel-error'
+                    : 'bg-pixel-gray hover:bg-pixel-light-gray text-pixel-primary border-pixel-gray'
+                }`}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
