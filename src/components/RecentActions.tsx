@@ -69,7 +69,6 @@ export function RecentActions({ actions, currentRound, maxRounds, actionsByRound
         ) : (
           <div className="pixel-card bg-pixel-gray border-pixel-light-gray p-4 text-center">
             <div className="text-pixel-sm text-pixel-light-gray font-bold mb-2">
-              🎯
             </div>
             <div className="text-pixel-xs text-pixel-light-gray font-bold">
               No actions this round yet. Make the first move!

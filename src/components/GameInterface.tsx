@@ -3,7 +3,6 @@ import { GameState, Action } from '../types/game';
 import { Timer } from './Timer';
 import { PlayerWallet } from './PlayerWallet';
 import { AssetsList } from './AssetsList';
-import { MarketChanges } from './MarketChanges';
 import { PlayerStats } from './PlayerStats';
 import { ActionPanel } from './ActionPanel';
 import { RecentActions } from './RecentActions';
@@ -402,8 +401,7 @@ export function GameInterface({ gameId, onExitGame }: GameInterfaceProps) {
           {/* Left Column - Compact Info Panels */}
           <div className="lg:col-span-3 space-y-3">
             <Timer timeRemaining={gameState.timeRemaining} />
-            <AssetsList assets={gameState.currentPlayer.assets} />
-            <MarketChanges changes={gameState.marketChanges} />
+            <AssetsList assets={gameState.currentPlayer.assets} marketChanges={gameState.marketChanges} />
             <RecentActions 
               actions={gameState.recentActions} 
               currentRound={gameState.currentRound} 
