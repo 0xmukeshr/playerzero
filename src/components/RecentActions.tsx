@@ -38,7 +38,7 @@ export function RecentActions({ actions, currentRound, maxRounds, actionsByRound
       {/* Round Selector and Actions in horizontal layout */}
       <div className="p-3">
         <div className="flex items-center space-x-3 mb-3">
-          <label className="text-pixel-xs font-bold text-pixel-light-gray uppercase tracking-wider whitespace-nowrap">View Round:</label>
+          <label className="text-pixel-xs font-bold text-pixel-light-gray uppercase tracking-wider whitespace-nowrap">Round:</label>
           <select 
             value={selectedRound}
             onChange={(e) => setSelectedRound(Number(e.target.value))}
