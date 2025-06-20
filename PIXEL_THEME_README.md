@@ -67,6 +67,7 @@ Your Strategy Clash application has been completely transformed with a retro pix
 - `pixel-dark-gray`: #1a1a1a
 - `pixel-gray`: #2d2d2d
 - `pixel-light-gray`: #404040
+- `pixel-base-gray`:rgb(148, 148, 148)
 
 ### **Typography**
 

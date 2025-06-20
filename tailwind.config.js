@@ -14,6 +14,7 @@ export default {
           'dark-gray': '#1a1a1a',
           'gray': '#2d2d2d',
           'light-gray': '#404040',
+          'base-gray': '#949494', // RGB(148, 148, 148)
           
           // Primary colors (8-bit style)
           'red': '#ff4444',

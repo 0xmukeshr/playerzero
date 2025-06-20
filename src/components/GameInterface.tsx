@@ -385,7 +385,7 @@ export function GameInterface({ gameId, onExitGame }: GameInterfaceProps) {
         <div className="flex items-center justify-between mb-3">
           <h1 className="text-pixel-lg font-bold text-pixel-primary uppercase tracking-wider">Trading Game</h1>
           <div className="flex items-center space-x-3">
-            <div className="text-pixel-light-gray text-pixel-sm font-bold pixel-notification bg-pixel-dark-gray border-pixel-gray px-2 py-1">
+            <div className="text-pixel-base-gray text-pixel-sm font-bold pixel-notification bg-pixel-dark-gray border-pixel-gray px-2 py-1">
               Round {gameState.currentRound}/{gameState.maxRounds}
             </div>
             <button

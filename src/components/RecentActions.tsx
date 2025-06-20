@@ -30,7 +30,7 @@ export function RecentActions({ actions, currentRound, maxRounds, actionsByRound
     <div className="bg-pixel-dark-gray pixel-panel border-pixel-gray overflow-hidden">
       <div className="px-3 py-2 border-b-2 border-pixel-gray flex items-center justify-between">
         <h3 className="text-pixel-sm font-bold text-pixel-primary uppercase tracking-wider">Recent Actions</h3>
-        <div className="text-pixel-xs text-pixel-light-gray font-bold">
+        <div className="text-pixel-xs text-pixel-base-gray font-bold">
           Round {currentRound}/{maxRounds}
         </div>
       </div>
@@ -38,11 +38,11 @@ export function RecentActions({ actions, currentRound, maxRounds, actionsByRound
       {/* Round Selector and Actions in horizontal layout */}
       <div className="p-3">
         <div className="flex items-center space-x-3 mb-3">
-          <label className="text-pixel-xs font-bold text-pixel-light-gray uppercase tracking-wider whitespace-nowrap">Round:</label>
+          <label className="text-pixel-xs font-bold text-pixel-base-gray uppercase tracking-wider whitespace-nowrap">Round:</label>
           <select 
             value={selectedRound}
             onChange={(e) => setSelectedRound(Number(e.target.value))}
-            className="flex-1 bg-pixel-gray border-2 border-pixel-light-gray text-pixel-xs text-pixel-light-gray font-bold p-1 pixel-card uppercase tracking-wider focus:border-pixel-primary focus:outline-none"
+            className="flex-1 bg-pixel-gray border-2 border-pixel-base-gray text-pixel-xs text-pixel-base-gray font-bold p-1 pixel-card uppercase tracking-wider focus:border-pixel-primary focus:outline-none"
           >
             {availableRounds.map(round => (
               <option key={round} value={round} className="bg-pixel-gray">
@@ -56,8 +56,8 @@ export function RecentActions({ actions, currentRound, maxRounds, actionsByRound
         {displayActions.length > 0 ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
             {displayActions.slice(0, 6).map((action, index) => (
-              <div key={index} className="pixel-card bg-pixel-gray border-pixel-light-gray p-2 hover:bg-pixel-light-gray transition-colors">
-                <div className="text-pixel-xs text-pixel-light-gray font-bold leading-tight">
+              <div key={index} className="pixel-card bg-pixel-gray border-pixel-base-gray p-2 hover:bg-pixel-base-gray transition-colors">
+                <div className="text-pixel-xs text-pixel-base-gray font-bold leading-tight">
                   {action.length > 45 ? action.substring(0, 42) + '...' : action}
                 </div>
                 <div className="text-pixel-xs text-pixel-primary mt-1 opacity-75">
@@ -67,10 +67,10 @@ export function RecentActions({ actions, currentRound, maxRounds, actionsByRound
             ))}
           </div>
         ) : (
-          <div className="pixel-card bg-pixel-gray border-pixel-light-gray p-4 text-center">
-            <div className="text-pixel-sm text-pixel-light-gray font-bold mb-2">
+          <div className="pixel-card bg-pixel-gray border-pixel-base-gray p-4 text-center">
+            <div className="text-pixel-sm text-pixel-base-gray font-bold mb-2">
             </div>
-            <div className="text-pixel-xs text-pixel-light-gray font-bold">
+            <div className="text-pixel-xs text-pixel-base-gray font-bold">
               No actions this round yet. Make the first move!
             </div>
           </div>

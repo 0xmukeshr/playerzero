@@ -32,6 +32,15 @@ export function ActionPanel({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [quickPreset, setQuickPreset] = useState<number | null>(null);
   
+  // Function to play click sound
+  const playClickSound = () => {
+    const audio = new Audio('/audio/action_switch.ogg');
+    audio.volume = 0.4; // Set a reasonable volume
+    audio.play().catch(error => {
+      console.log('Could not play click sound:', error);
+    });
+  };
+  
   const actions: { type: Action['type']; label: string; color: string; borderColor: string; icon: any; description: string }[] = [
     { type: 'buy', label: 'Buy', color: 'bg-pixel-success hover:bg-pixel-primary', borderColor: 'border-pixel-success', icon: TrendingUp, description: 'Purchase resources with tokens' },
     { type: 'sell', label: 'Sell', color: 'bg-pixel-blue hover:bg-pixel-cyan', borderColor: 'border-pixel-blue', icon: TrendingDown, description: 'Convert resources to tokens' },
@@ -108,7 +117,10 @@ export function ActionPanel({
       <div className="flex items-center justify-between">
         <h3 className="text-pixel-sm font-bold text-pixel-primary uppercase tracking-wider">Actions</h3>
         <button
-          onClick={() => setShowAdvanced(!showAdvanced)}
+          onClick={() => {
+            playClickSound();
+            setShowAdvanced(!showAdvanced);
+          }}
           className="px-2 py-1 bg-pixel-gray hover:bg-pixel-light-gray pixel-btn border-pixel-light-gray text-pixel-xs text-pixel-accent font-bold uppercase"
         >
           {showAdvanced ? 'Simple' : 'Advanced'}
@@ -122,7 +134,10 @@ export function ActionPanel({
           return (
             <div key={action.type} className="relative group">
               <button
-                onClick={() => onActionChange(action.type)}
+                onClick={() => {
+                  playClickSound();
+                  onActionChange(action.type);
+                }}
                 className={`w-full px-2 py-2 pixel-btn text-pixel-black font-bold text-pixel-xs uppercase tracking-wider flex items-center justify-center space-x-1 ${
                   selectedAction === action.type
                     ? `${action.color} ${action.borderColor}`
@@ -166,7 +181,10 @@ export function ActionPanel({
           {resources.map((resource) => (
             <button
               key={resource.type}
-              onClick={() => onResourceChange(resource.type)}
+              onClick={() => {
+                playClickSound();
+                onResourceChange(resource.type);
+              }}
               className={`p-2 pixel-btn text-pixel-xs font-bold uppercase flex flex-col items-center space-y-1 ${
                 selectedResource === resource.type
                   ? `${resource.bgColor} text-pixel-black border-pixel-black`
@@ -202,7 +220,10 @@ export function ActionPanel({
         <div className="flex items-center justify-between mb-2">
           <label className="text-pixel-xs font-bold text-pixel-primary uppercase">Amount</label>
           <button
-            onClick={handleMaxAmount}
+            onClick={() => {
+              playClickSound();
+              handleMaxAmount();
+            }}
             className="px-2 py-1 bg-pixel-secondary hover:bg-pixel-warning text-pixel-black font-bold text-pixel-xs pixel-btn border-pixel-black uppercase"
           >
             Max ({getMaxAmount()})
@@ -219,7 +240,12 @@ export function ActionPanel({
             return (
               <button
                 key={quickAmount}
-                onClick={() => handleQuickAmount(quickAmount)}
+                onClick={() => {
+                  if (!isDisabled) {
+                    playClickSound();
+                    handleQuickAmount(quickAmount);
+                  }
+                }}
                 disabled={isDisabled}
                 className={`px-1 py-1 pixel-btn text-pixel-xs font-bold ${
                   isSelected
@@ -251,6 +277,7 @@ export function ActionPanel({
           <div className="flex flex-col">
             <button
               onClick={() => {
+                playClickSound();
                 const newAmount = Math.min(getMaxAmount(), amount + 1);
                 onAmountChange(newAmount);
                 setQuickPreset(null);
@@ -261,6 +288,7 @@ export function ActionPanel({
             </button>
             <button
               onClick={() => {
+                playClickSound();
                 const newAmount = Math.max(1, amount - 1);
                 onAmountChange(newAmount);
                 setQuickPreset(null);
@@ -308,7 +336,12 @@ export function ActionPanel({
               return (
                 <button
                   key={player.id}
-                  onClick={() => onTargetChange(player.name)}
+                  onClick={() => {
+                    if (resourceAmount > 0) {
+                      playClickSound();
+                      onTargetChange(player.name);
+                    }
+                  }}
                   className={`p-2 pixel-btn text-pixel-xs font-bold uppercase tracking-wider ${
                     targetPlayer === player.name
                       ? 'bg-pixel-error text-pixel-black border-pixel-black'

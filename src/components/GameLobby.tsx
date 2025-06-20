@@ -155,7 +155,7 @@ export function GameLobby({ games, onJoinGame, onViewGame, onStartNewGame, onPla
                   value={gameName}
                   onChange={(e) => setGameName(e.target.value)}
                   placeholder="Enter game name"
-                  className="w-full px-4 py-3 text-pixel-base font-bold bg-pixel-dark-gray text-pixel-light-gray border-4 border-pixel-gray focus:border-pixel-primary focus:outline-none mb-6"
+                  className="w-full px-4 py-3 text-pixel-base font-bold bg-pixel-dark-gray text-pixel-base-gray border-4 border-pixel-gray focus:border-pixel-primary focus:outline-none mb-6"
                   maxLength={30}
                 />
                 <div className="flex space-x-4">

@@ -24,7 +24,7 @@ export function PlayerStats({ players }: PlayerStatsProps) {
     if (index === 0) return 'text-pixel-success';
     if (index === 1) return 'text-pixel-blue';
     if (index === 2) return 'text-pixel-secondary';
-    return 'text-pixel-light-gray';
+    return 'text-pixel-primary'; // Changed from light-gray to primary (white)
   };
 
   return (

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Trophy, Users, Zap, Target } from 'lucide-react';
 
 interface HomePageProps {
@@ -6,6 +6,8 @@ interface HomePageProps {
 }
 
 export function HomePage({ onNavigateToGames }: HomePageProps) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+
   const features = [
     {
       icon: Trophy,
@@ -29,54 +31,53 @@ export function HomePage({ onNavigateToGames }: HomePageProps) {
     }
   ];
 
+  // Auto-play background music on component mount
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (audio) {
+      // Set volume to a reasonable level
+      audio.volume = 0.3;
+      // Attempt to play (some browsers require user interaction)
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(error => {
+          console.log('Auto-play prevented by browser policy:', error);
+        });
+      }
+    }
+  }, []);
+
   return (
-    <div className="max-w-7xl mx-auto px-6 py-12">
-      {/* Hero Section */}
-      <div className="text-center mb-16">
-        <h1 className="text-pixel-3xl font-bold text-pixel-primary mb-8 uppercase tracking-wider">
-          Welcome <span className="text-pixel-accent animate-bounce-pixel">Player Zero</span>
+    <div className="min-h-screen flex items-center justify-center px-4">
+      {/* Background Audio */}
+      <audio
+        ref={audioRef}
+        loop
+        preload="auto"
+        className="hidden"
+      >
+        <source src="/audio/pixel-paradise.mp3" type="audio/mpeg" />
+        Your browser does not support the audio element.
+      </audio>
+
+      {/* Centered Hero Section */}
+      <div className="text-center max-w-4xl mx-auto">
+        <h1 className="text-5xl md:text-6xl font-bold text-pixel-primary mb-8 uppercase tracking-wider animate-pulse  animate-pulse">
+       <span className="relative -top-[20px] block">Welcome</span>
+        <span className="text-pixel-accent animate-bounce-pixel">Player_Zero</span>
         </h1>
-        <p className="text-pixel-base text-pixel-light-gray mb-8 max-w-2xl mx-auto leading-relaxed">
+
+
+        <p className="text-pixel-lg text-pixel-base-gray mb-12 max-w-3xl mx-auto leading-relaxed">
           Master the art of strategic warfare in intense multiplayer battles. 
           Join thousands of players in the ultimate test of tactical prowess.
         </p>
         <button
           onClick={onNavigateToGames}
-          className="px-8 py-4 bg-pixel-primary hover:bg-pixel-accent text-pixel-black font-bold text-pixel-lg uppercase tracking-wider pixel-btn border-pixel-black"
+          className="px-12 py-6 bg-pixel-primary hover:bg-pixel-accent text-pixel-black font-bold text-pixel-xl uppercase tracking-wider pixel-btn border-pixel-black transform hover:scale-105 transition-transform animate-bounce"
         >
           Enter Game Lobby
         </button>
-      </div>
-
-      {/* Features Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-16">
-        {features.map((feature, index) => (
-          <div key={index} className="bg-pixel-gray pixel-card border-pixel-light-gray p-6">
-            <div className="flex items-center justify-center w-12 h-12 bg-pixel-secondary pixel-avatar mb-4">
-              <feature.icon className="w-6 h-6 text-pixel-black" />
-            </div>
-            <h3 className="text-pixel-lg font-bold text-pixel-primary mb-3 uppercase">{feature.title}</h3>
-            <p className="text-pixel-light-gray text-pixel-sm leading-relaxed">{feature.description}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Stats Section */}
-      <div className="bg-pixel-dark-gray pixel-panel border-pixel-gray p-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-center">
-          <div className="pixel-card bg-pixel-gray border-pixel-primary p-4">
-            <div className="text-pixel-2xl font-bold text-pixel-success mb-2 animate-pulse">15,000+</div>
-            <div className="text-pixel-primary text-pixel-sm uppercase tracking-wider">Active Players</div>
-          </div>
-          <div className="pixel-card bg-pixel-gray border-pixel-secondary p-4">
-            <div className="text-pixel-2xl font-bold text-pixel-warning mb-2 animate-pulse">500+</div>
-            <div className="text-pixel-primary text-pixel-sm uppercase tracking-wider">Daily Matches</div>
-          </div>
-          <div className="pixel-card bg-pixel-gray border-pixel-accent p-4">
-            <div className="text-pixel-2xl font-bold text-pixel-cyan mb-2 animate-pulse">24/7</div>
-            <div className="text-pixel-primary text-pixel-sm uppercase tracking-wider">Game Availability</div>
-          </div>
-        </div>
       </div>
     </div>
   );
