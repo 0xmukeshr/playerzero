@@ -18,7 +18,7 @@ export function MarketChanges({ changes }: MarketChangesProps) {
 
   return (
     <div className="bg-pixel-dark-gray pixel-panel border-pixel-gray p-2 max-w-xs">
-      <h3 className="text-pixel-xs font-bold text-pixel-primary mb-2 uppercase tracking-wider text-center">Market Trends</h3>
+      <h3 className="text-pixel-sm font-bold text-pixel-primary mb-2 uppercase tracking-wider text-center">Market Trends</h3>
       
       <div className="space-y-1">
         {changes.map((change) => {
@@ -26,11 +26,11 @@ export function MarketChanges({ changes }: MarketChangesProps) {
           const isPositive = change.change > 0;
           
           return (
-            <div key={change.resource} className={`pixel-card bg-pixel-gray ${colors.borderColor} p-1`}>
+            <div key={change.resource} className={`pixel-card bg-pixel-gray ${colors.borderColor} p-3.5`}>
               <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-1">
-                  <div className={`w-4 h-4 ${colors.bgColor} pixel-avatar flex items-center justify-center`}>
-                    <Circle className="w-2 h-2 text-pixel-black fill-current" />
+                <div className="flex items-center space-x-2">
+                  <div className={`w-6 h-6 ${colors.bgColor} pixel-avatar flex items-center justify-center`}>
+                    <Circle className="w-3 h-3 text-pixel-black fill-current" />
                   </div>
                   <div className="text-pixel-primary font-bold text-pixel-xs uppercase">{change.resource}</div>
                 </div>
