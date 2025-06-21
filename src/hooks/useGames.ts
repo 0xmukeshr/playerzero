@@ -10,7 +10,9 @@ const initialGames: Game[] = [
     maxPlayers: 4,
     createdAt: new Date(),
     currentRound: 1,
-    maxRounds: 20
+    maxRounds: 20,
+    isPrivate: false,
+    hostName: 'Alpha_Commander'
   },
   {
     id: '2',
@@ -20,7 +22,9 @@ const initialGames: Game[] = [
     maxPlayers: 4,
     createdAt: new Date(),
     currentRound: 8,
-    maxRounds: 20
+    maxRounds: 20,
+    isPrivate: true,
+    hostName: 'Trader_Max'
   },
   {
     id: '3',
@@ -30,7 +34,9 @@ const initialGames: Game[] = [
     maxPlayers: 4,
     createdAt: new Date(),
     currentRound: 1,
-    maxRounds: 20
+    maxRounds: 20,
+    isPrivate: false,
+    hostName: 'Market_King'
   },
   {
     id: '4',
@@ -40,7 +46,9 @@ const initialGames: Game[] = [
     maxPlayers: 4,
     createdAt: new Date(),
     currentRound: 20,
-    maxRounds: 20
+    maxRounds: 20,
+    isPrivate: false,
+    hostName: 'Strategy_Pro'
   },
   {
     id: '5',
@@ -50,7 +58,9 @@ const initialGames: Game[] = [
     maxPlayers: 4,
     createdAt: new Date(),
     currentRound: 1,
-    maxRounds: 20
+    maxRounds: 20,
+    isPrivate: false,
+    hostName: 'War_Lord'
   }
 ];
 
@@ -92,7 +102,16 @@ export function useGames() {
       'Resource Rush'
     ];
     
+    const hostNames = [
+      'Commander_Alpha',
+      'Trade_Master',
+      'Strategy_King',
+      'Resource_Lord',
+      'Market_Titan'
+    ];
+    
     const randomName = gameNames[Math.floor(Math.random() * gameNames.length)];
+    const randomHost = hostNames[Math.floor(Math.random() * hostNames.length)];
     const newGame: Game = {
       id: Date.now().toString(),
       name: randomName,
@@ -101,7 +120,9 @@ export function useGames() {
       maxPlayers: 4,
       createdAt: new Date(),
       currentRound: 1,
-      maxRounds: 20
+      maxRounds: 20,
+      isPrivate: Math.random() > 0.7, // 30% chance of being private
+      hostName: randomHost
     };
 
     setGames(prevGames => [newGame, ...prevGames]);

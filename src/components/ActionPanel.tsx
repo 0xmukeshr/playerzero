@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Player, Action } from '../types/game';
 import { Circle, TrendingUp, TrendingDown, Zap, Target } from 'lucide-react';
+import { useAudio } from '../hooks/useAudio';
 
 interface ActionPanelProps {
   selectedAction: Action['type'];
@@ -31,15 +32,7 @@ export function ActionPanel({
 }: ActionPanelProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [quickPreset, setQuickPreset] = useState<number | null>(null);
-  
-  // Function to play click sound
-  const playClickSound = () => {
-    const audio = new Audio('/audio/action_switch.ogg');
-    audio.volume = 0.4; // Set a reasonable volume
-    audio.play().catch(error => {
-      console.log('Could not play click sound:', error);
-    });
-  };
+  const { playSound } = useAudio();
   
   const actions: { type: Action['type']; label: string; color: string; borderColor: string; icon: any; description: string }[] = [
     { type: 'buy', label: 'Buy', color: 'bg-pixel-success hover:bg-pixel-primary', borderColor: 'border-pixel-success', icon: TrendingUp, description: 'Purchase resources with tokens' },
@@ -118,7 +111,7 @@ export function ActionPanel({
         <h3 className="text-pixel-sm font-bold text-pixel-primary uppercase tracking-wider">Actions</h3>
         <button
           onClick={() => {
-            playClickSound();
+            playSound('click');
             setShowAdvanced(!showAdvanced);
           }}
           className="px-2 py-1 bg-pixel-gray hover:bg-pixel-light-gray pixel-btn border-pixel-light-gray text-pixel-xs text-pixel-accent font-bold uppercase"
@@ -135,7 +128,7 @@ export function ActionPanel({
             <div key={action.type} className="relative group">
               <button
                 onClick={() => {
-                  playClickSound();
+                  playSound('click');
                   onActionChange(action.type);
                 }}
                 className={`w-full px-2 py-2 pixel-btn text-pixel-black font-bold text-pixel-xs uppercase tracking-wider flex items-center justify-center space-x-1 ${
@@ -182,7 +175,7 @@ export function ActionPanel({
             <button
               key={resource.type}
               onClick={() => {
-                playClickSound();
+                playSound('click');
                 onResourceChange(resource.type);
               }}
               className={`p-2 pixel-btn text-pixel-xs font-bold uppercase flex flex-col items-center space-y-1 ${
@@ -221,7 +214,7 @@ export function ActionPanel({
           <label className="text-pixel-xs font-bold text-pixel-primary uppercase">Amount</label>
           <button
             onClick={() => {
-              playClickSound();
+              playSound('click');
               handleMaxAmount();
             }}
             className="px-2 py-1 bg-pixel-secondary hover:bg-pixel-warning text-pixel-black font-bold text-pixel-xs pixel-btn border-pixel-black uppercase"
@@ -242,7 +235,7 @@ export function ActionPanel({
                 key={quickAmount}
                 onClick={() => {
                   if (!isDisabled) {
-                    playClickSound();
+                    playSound('click');
                     handleQuickAmount(quickAmount);
                   }
                 }}
@@ -277,7 +270,7 @@ export function ActionPanel({
           <div className="flex flex-col">
             <button
               onClick={() => {
-                playClickSound();
+                playSound('click');
                 const newAmount = Math.min(getMaxAmount(), amount + 1);
                 onAmountChange(newAmount);
                 setQuickPreset(null);
@@ -288,7 +281,7 @@ export function ActionPanel({
             </button>
             <button
               onClick={() => {
-                playClickSound();
+                playSound('click');
                 const newAmount = Math.max(1, amount - 1);
                 onAmountChange(newAmount);
                 setQuickPreset(null);
@@ -338,7 +331,7 @@ export function ActionPanel({
                   key={player.id}
                   onClick={() => {
                     if (resourceAmount > 0) {
-                      playClickSound();
+                      playSound('click');
                       onTargetChange(player.name);
                     }
                   }}

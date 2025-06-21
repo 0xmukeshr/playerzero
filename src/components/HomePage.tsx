@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Trophy, Users, Zap, Target } from 'lucide-react';
+import { useAudio } from '../hooks/useAudio';
 
 interface HomePageProps {
   onNavigateToGames: () => void;
@@ -7,6 +8,7 @@ interface HomePageProps {
 
 export function HomePage({ onNavigateToGames }: HomePageProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const { playSound } = useAudio();
 
   const features = [
     {
@@ -73,7 +75,10 @@ export function HomePage({ onNavigateToGames }: HomePageProps) {
           Join thousands of players in the ultimate test of tactical prowess.
         </p>
         <button
-          onClick={onNavigateToGames}
+          onClick={() => {
+            playSound('switch');
+            onNavigateToGames();
+          }}
           className="px-12 py-6 bg-pixel-primary hover:bg-pixel-accent text-pixel-black font-bold text-pixel-xl uppercase tracking-wider pixel-btn border-pixel-black transform hover:scale-105 transition-transform animate-bounce"
         >
           Enter Game Lobby

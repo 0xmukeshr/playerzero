@@ -1,5 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useSocket } from '../context/SocketContext';
+import { useAudio } from '../hooks/useAudio';
+
+interface PublicGame {
+  id: string;
+  name: string;
+  status: string;
+  currentPlayers: number;
+  maxPlayers: number;
+  hostName: string;
+  createdAt: Date;
+}
 
 interface GameLobbyProps {
   onPlayGame: () => void;
@@ -7,29 +18,55 @@ interface GameLobbyProps {
 
 export function GameLobby({ onPlayGame }: GameLobbyProps) {
   const { socket, connected, setGameInfo } = useSocket();
+  const { playSound } = useAudio();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [playerName, setPlayerName] = useState('');
   const [gameName, setGameName] = useState('');
+  const [isPrivate, setIsPrivate] = useState(false);
   const [createdGameId, setCreatedGameId] = useState<string | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
   const [joinGameId, setJoinGameId] = useState('');
   const [joinError, setJoinError] = useState('');
   const [error, setError] = useState('');
+  const [publicGames, setPublicGames] = useState<PublicGame[]>([]);
+  const [refreshingGames, setRefreshingGames] = useState(false);
+  const [showJoinPublicModal, setShowJoinPublicModal] = useState(false);
+  const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
+  const [selectedGameName, setSelectedGameName] = useState<string>('');
+  const [joinPublicPlayerName, setJoinPublicPlayerName] = useState('');
 
   useEffect(() => {
     if (!socket) return;
+
+    // Load public games on mount
+    loadPublicGames();
+
+    // Auto-refresh public games every 10 seconds
+    const refreshInterval = setInterval(() => {
+      loadPublicGames();
+    }, 10000);
 
     socket.on('game-created', (data) => {
       setCreatedGameId(data.gameId);
       setGameInfo(data.gameId, data.playerId, playerName);
       setGameName('');
       setPlayerName('');
+      setIsPrivate(false);
+      // Refresh public games if it was a public game
+      if (!isPrivate) {
+        loadPublicGames();
+      }
     });
 
     socket.on('game-joined', (data) => {
       setGameInfo(data.gameId, data.playerId, playerName);
       onPlayGame();
+    });
+
+    socket.on('public-games-list', (games) => {
+      setPublicGames(games);
+      setRefreshingGames(false);
     });
 
     socket.on('error', (data) => {
@@ -40,19 +77,67 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
     });
 
     return () => {
+      clearInterval(refreshInterval);
       socket.off('game-created');
       socket.off('game-joined');
+      socket.off('public-games-list');
       socket.off('error');
     };
-  }, [socket, onPlayGame, showJoinModal]);
+  }, [socket, onPlayGame, showJoinModal, isPrivate]);
+
+  const loadPublicGames = () => {
+    if (socket) {
+      setRefreshingGames(true);
+      socket.emit('get-public-games');
+    }
+  };
 
   const handleCreateGame = () => {
     if (gameName.trim() && playerName.trim() && socket) {
       socket.emit('create-game', {
         gameName: gameName.trim(),
-        playerName: playerName.trim()
+        playerName: playerName.trim(),
+        isPrivate: isPrivate
       });
     }
+  };
+
+  const handleJoinPublicGame = (gameId: string, gameName?: string) => {
+    if (playerName.trim() && socket) {
+      socket.emit('join-game', {
+        gameId: gameId,
+        playerName: playerName.trim()
+      });
+    } else {
+      // Show custom modal for player name input
+      const game = publicGames.find(g => g.id === gameId);
+      setSelectedGameId(gameId);
+      setSelectedGameName(game?.name || 'Unknown Game');
+      setShowJoinPublicModal(true);
+    }
+  };
+
+  const handleConfirmJoinPublicGame = () => {
+    if (joinPublicPlayerName.trim() && selectedGameId && socket) {
+      setPlayerName(joinPublicPlayerName.trim());
+      socket.emit('join-game', {
+        gameId: selectedGameId,
+        playerName: joinPublicPlayerName.trim()
+      });
+      
+      // Close modal and reset state
+      setShowJoinPublicModal(false);
+      setSelectedGameId(null);
+      setSelectedGameName('');
+      setJoinPublicPlayerName('');
+    }
+  };
+
+  const handleCloseJoinPublicModal = () => {
+    setShowJoinPublicModal(false);
+    setSelectedGameId(null);
+    setSelectedGameName('');
+    setJoinPublicPlayerName('');
   };
 
   const handleJoinById = () => {
@@ -122,7 +207,10 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
             Start a new multiplayer game and invite friends
           </p>
           <button
-            onClick={() => setShowCreateModal(true)}
+            onClick={() => {
+              playSound('click');
+              setShowCreateModal(true);
+            }}
             disabled={!connected}
             className="w-full px-6 py-4 bg-pixel-primary hover:bg-pixel-success text-pixel-black font-bold text-pixel-base pixel-btn border-pixel-black uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
           >
@@ -139,13 +227,116 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
             Enter a game ID to join an existing game
           </p>
           <button
-            onClick={() => setShowJoinModal(true)}
+            onClick={() => {
+              playSound('click');
+              setShowJoinModal(true);
+            }}
             disabled={!connected}
             className="w-full px-6 py-4 bg-pixel-accent hover:bg-pixel-success text-pixel-black font-bold text-pixel-base pixel-btn border-pixel-black uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Join by Game ID
           </button>
         </div>
+      </div>
+
+      {/* Public Games Section */}
+      <div className="mt-8">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-pixel-xl font-bold text-pixel-primary uppercase tracking-wider">
+            Public Games
+          </h3>
+          <button
+            onClick={() => {
+              playSound('click');
+              loadPublicGames();
+            }}
+            disabled={refreshingGames || !connected}
+            className="px-4 py-2 bg-pixel-accent hover:bg-pixel-primary text-pixel-black font-bold text-pixel-sm pixel-btn border-pixel-black uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {refreshingGames ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
+
+        {publicGames.length === 0 ? (
+          <div className="bg-pixel-dark-gray pixel-panel border-pixel-gray p-6 text-center">
+            <p className="text-pixel-base-gray text-pixel-base">
+              No public games available. Create one to get started!
+            </p>
+          </div>
+        ) : (
+          <div className="bg-pixel-dark-gray pixel-panel border-pixel-gray overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-pixel-gray border-b-4 border-pixel-black">
+                    <th className="text-left px-4 py-3 text-pixel-base font-bold text-pixel-primary uppercase tracking-wider">
+                      Name
+                    </th>
+                    <th className="text-center px-4 py-3 text-pixel-base font-bold text-pixel-primary uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="text-center px-4 py-3 text-pixel-base font-bold text-pixel-primary uppercase tracking-wider">
+                      Host
+                    </th>
+                    <th className="text-center px-4 py-3 text-pixel-base font-bold text-pixel-primary uppercase tracking-wider">
+                      Players
+                    </th>
+                    <th className="text-center px-4 py-3 text-pixel-base font-bold text-pixel-primary uppercase tracking-wider">
+                      Join Game
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {publicGames.map((game, index) => (
+                    <tr 
+                      key={game.id} 
+                      className={`border-b-2 border-pixel-black hover:bg-pixel-light-gray transition-colors ${
+                        index % 2 === 0 ? 'bg-pixel-dark-gray' : 'bg-pixel-black'
+                      }`}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="text-pixel-base font-bold text-pixel-base-gray truncate max-w-xs">
+                          {game.name}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`px-3 py-1 text-pixel-xs font-bold pixel-notification ${
+                          game.status === 'Open' 
+                            ? 'bg-pixel-success text-pixel-black border-pixel-success'
+                            : 'bg-pixel-warning text-pixel-black border-pixel-warning'
+                        }`}>
+                          {game.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="text-pixel-sm font-bold text-pixel-base-gray">
+                          {game.hostName}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="text-pixel-sm font-bold text-pixel-base-gray">
+                          {game.currentPlayers}/{game.maxPlayers}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => {
+                            playSound('click');
+                            handleJoinPublicGame(game.id);
+                          }}
+                          disabled={game.status !== 'Open' || !connected}
+                          className="px-4 py-2 bg-pixel-primary hover:bg-pixel-success text-pixel-black font-bold text-pixel-sm pixel-btn border-pixel-black uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {game.status === 'Open' ? 'Join' : 'Full'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Create Game Modal */}
@@ -180,20 +371,43 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
                   value={gameName}
                   onChange={(e) => setGameName(e.target.value)}
                   placeholder="Enter game name"
-                  className="w-full px-4 py-3 text-pixel-base font-bold bg-pixel-dark-gray text-pixel-base-gray border-4 border-pixel-gray focus:border-pixel-primary focus:outline-none mb-6"
+                  className="w-full px-4 py-3 text-pixel-base font-bold bg-pixel-dark-gray text-pixel-base-gray border-4 border-pixel-gray focus:border-pixel-primary focus:outline-none mb-4"
                   maxLength={30}
                 />
                 
+                <div className="mb-6">
+                  <label className="flex items-center space-x-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isPrivate}
+                      onChange={(e) => setIsPrivate(e.target.checked)}
+                      className="w-5 h-5 accent-pixel-primary"
+                    />
+                    <span className="text-pixel-base text-pixel-base-gray font-bold">
+                      Private Game
+                    </span>
+                  </label>
+                  <p className="text-pixel-xs text-pixel-base-gray mt-1 ml-8">
+                    {isPrivate ? 'Only players with the Game ID can join' : 'Game will appear in public lobby'}
+                  </p>
+                </div>
+                
                 <div className="flex space-x-4">
                   <button
-                    onClick={handleCreateGame}
+                    onClick={() => {
+                      playSound('click');
+                      handleCreateGame();
+                    }}
                     disabled={!gameName.trim() || !playerName.trim()}
                     className="flex-1 px-6 py-3 bg-pixel-primary hover:bg-pixel-success text-pixel-black font-bold text-pixel-base pixel-btn border-pixel-black uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Create
                   </button>
                   <button
-                    onClick={handleCloseCreateModal}
+                    onClick={() => {
+                      playSound('click');
+                      handleCloseCreateModal();
+                    }}
                     className="flex-1 px-6 py-3 bg-pixel-gray hover:bg-pixel-light-gray text-pixel-primary font-bold text-pixel-base pixel-btn border-pixel-gray uppercase tracking-wider"
                   >
                     Cancel
@@ -229,13 +443,19 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
                 </div>
                 <div className="flex space-x-4">
                   <button
-                    onClick={handlePlayCreatedGame}
+                    onClick={() => {
+                      playSound('click');
+                      handlePlayCreatedGame();
+                    }}
                     className="flex-1 px-6 py-3 bg-pixel-primary hover:bg-pixel-success text-pixel-black font-bold text-pixel-base pixel-btn border-pixel-black uppercase tracking-wider"
                   >
                     Enter Game
                   </button>
                   <button
-                    onClick={handleCloseCreateModal}
+                    onClick={() => {
+                      playSound('click');
+                      handleCloseCreateModal();
+                    }}
                     className="flex-1 px-6 py-3 bg-pixel-gray hover:bg-pixel-light-gray text-pixel-primary font-bold text-pixel-base pixel-btn border-pixel-gray uppercase tracking-wider"
                   >
                     Close
@@ -301,7 +521,10 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
             
             <div className="flex space-x-4">
               <button
-                onClick={handleJoinById}
+                onClick={() => {
+                  playSound('click');
+                  handleJoinById();
+                }}
                 disabled={!joinGameId.trim() || !playerName.trim()}
                 className={`flex-1 px-6 py-3 font-bold text-pixel-base pixel-btn uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed ${
                   joinError
@@ -312,12 +535,77 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
                 Join Game
               </button>
               <button
-                onClick={handleCloseJoinModal}
+                onClick={() => {
+                  playSound('click');
+                  handleCloseJoinModal();
+                }}
                 className={`flex-1 px-6 py-3 font-bold text-pixel-base pixel-btn uppercase tracking-wider ${
                   joinError
                     ? 'bg-pixel-dark-gray hover:bg-pixel-gray text-pixel-error border-pixel-error'
                     : 'bg-pixel-gray hover:bg-pixel-light-gray text-pixel-primary border-pixel-gray'
                 }`}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Join Public Game Modal */}
+      {showJoinPublicModal && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-75 z-50">
+          <div className="bg-pixel-light-gray p-8 pixel-panel border-pixel-black max-w-md w-full mx-4">
+            <h3 className="text-pixel-xl font-bold text-pixel-primary text-center mb-2 uppercase tracking-wider">
+              Join Game
+            </h3>
+            <p className="text-pixel-base text-pixel-base-gray text-center mb-6">
+              "{selectedGameName}"
+            </p>
+            
+            {error && (
+              <div className="bg-pixel-error p-3 pixel-panel border-pixel-error mb-4">
+                <p className="text-pixel-black text-pixel-sm font-bold text-center">
+                  {error}
+                </p>
+              </div>
+            )}
+            
+            <input
+              type="text"
+              value={joinPublicPlayerName}
+              onChange={(e) => setJoinPublicPlayerName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && joinPublicPlayerName.trim()) {
+                  handleConfirmJoinPublicGame();
+                }
+                if (e.key === 'Escape') {
+                  handleCloseJoinPublicModal();
+                }
+              }}
+              placeholder="Enter your name"
+              className="w-full px-4 py-3 text-pixel-base font-bold bg-pixel-dark-gray text-pixel-base-gray border-4 border-pixel-gray focus:border-pixel-primary focus:outline-none mb-6"
+              maxLength={20}
+              autoFocus
+            />
+            
+            <div className="flex space-x-4">
+              <button
+                onClick={() => {
+                  playSound('click');
+                  handleConfirmJoinPublicGame();
+                }}
+                disabled={!joinPublicPlayerName.trim()}
+                className="flex-1 px-6 py-3 bg-pixel-primary hover:bg-pixel-success text-pixel-black font-bold text-pixel-base pixel-btn border-pixel-black uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Join Game
+              </button>
+              <button
+                onClick={() => {
+                  playSound('click');
+                  handleCloseJoinPublicModal();
+                }}
+                className="flex-1 px-6 py-3 bg-pixel-gray hover:bg-pixel-light-gray text-pixel-primary font-bold text-pixel-base pixel-btn border-pixel-gray uppercase tracking-wider"
               >
                 Cancel
               </button>

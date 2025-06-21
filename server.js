@@ -66,9 +66,28 @@ function createPlayer(playerId, playerName, socketId) {
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
+  // Get public games list
+  socket.on('get-public-games', () => {
+    const publicGames = [];
+    games.forEach((gameState, gameId) => {
+      if (!gameState.isPrivate && gameState.status === 'waiting') {
+        publicGames.push({
+          id: gameId,
+          name: gameState.gameName,
+          status: gameState.players.length >= 4 ? 'Full' : 'Open',
+          currentPlayers: gameState.players.length,
+          maxPlayers: 4,
+          hostName: gameState.players.find(p => p.id === gameState.host)?.name || 'Unknown',
+          createdAt: gameState.createdAt
+        });
+      }
+    });
+    socket.emit('public-games-list', publicGames);
+  });
+
   // Create a new game
   socket.on('create-game', (data) => {
-    const { gameName, playerName } = data;
+    const { gameName, playerName, isPrivate } = data;
     const gameId = generateGameId();
     const playerId = generatePlayerId();
     
@@ -77,6 +96,9 @@ io.on('connection', (socket) => {
     
     gameState.players.push(player);
     gameState.host = playerId;
+    gameState.gameName = gameName;
+    gameState.isPrivate = isPrivate || false;
+    gameState.createdAt = new Date();
     
     games.set(gameId, gameState);
     players.set(socket.id, { gameId, playerId, playerName });

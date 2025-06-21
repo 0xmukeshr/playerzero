@@ -1,5 +1,6 @@
 import React from 'react';
 import { Bell, Sword } from 'lucide-react';
+import { useAudio } from '../hooks/useAudio';
 
 interface HeaderProps {
   currentPage: string;
@@ -7,6 +8,8 @@ interface HeaderProps {
 }
 
 export function Header({ currentPage, onNavigate }: HeaderProps) {
+  const { playSound } = useAudio();
+  
   const navItems = [
     { id: 'home', label: 'Home' },
     { id: 'games', label: 'Games' },
@@ -27,7 +30,10 @@ export function Header({ currentPage, onNavigate }: HeaderProps) {
           {navItems.map((item) => (
             <button
               key={item.id}
-              onClick={() => onNavigate(item.id)}
+              onClick={() => {
+                playSound('rollover');
+                onNavigate(item.id);
+              }}
               className={`px-4 py-2 pixel-nav-item text-pixel-sm font-bold uppercase tracking-wider ${
                 currentPage === item.id
                   ? 'bg-pixel-primary text-pixel-black active'

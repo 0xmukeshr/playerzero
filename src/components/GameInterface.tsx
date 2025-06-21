@@ -7,6 +7,7 @@ import { PlayerStats } from './PlayerStats';
 import { ActionPanel } from './ActionPanel';
 import { RecentActions } from './RecentActions';
 import { useSocket } from '../context/SocketContext';
+import { useAudio } from '../hooks/useAudio';
 
 interface GameInterfaceProps {
   onExitGame: () => void;
@@ -14,6 +15,7 @@ interface GameInterfaceProps {
 
 export function GameInterface({ onExitGame }: GameInterfaceProps) {
   const { socket, gameId, playerId, playerName, clearGameInfo } = useSocket();
+  const { playSound } = useAudio();
   const [gameState, setGameState] = useState<any>(null);
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [selectedAction, setSelectedAction] = useState<Action['type']>('buy');
@@ -143,7 +145,10 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
               Waiting Room
             </h1>
             <button
-              onClick={handleExitGame}
+              onClick={() => {
+                playSound('click');
+                handleExitGame();
+              }}
               className="px-4 py-2 bg-pixel-error hover:bg-pixel-warning text-pixel-black font-bold text-pixel-sm pixel-btn border-pixel-black uppercase tracking-wider"
             >
               Exit Game
@@ -170,7 +175,10 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
                 <p>3. Host starts the game when ready</p>
               </div>
               <button
-                onClick={() => navigator.clipboard.writeText(gameId || '')}
+                onClick={() => {
+                  playSound('click');
+                  navigator.clipboard.writeText(gameId || '');
+                }}
                 className="mt-4 w-full px-4 py-2 bg-pixel-accent hover:bg-pixel-success text-pixel-black font-bold text-pixel-sm pixel-btn border-pixel-black uppercase tracking-wider"
               >
                 Copy Game ID
@@ -213,7 +221,10 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
           {isHost && (
             <div className="text-center">
               <button
-                onClick={handleStartGame}
+                onClick={() => {
+                  playSound('click');
+                  handleStartGame();
+                }}
                 disabled={gameState.players.length < 2}
                 className="px-8 py-4 bg-pixel-primary hover:bg-pixel-success text-pixel-black font-bold text-pixel-lg pixel-btn border-pixel-black uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
               >

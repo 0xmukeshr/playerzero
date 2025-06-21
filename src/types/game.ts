@@ -7,6 +7,8 @@ export interface Game {
   createdAt: Date;
   currentRound?: number;
   maxRounds?: number;
+  isPrivate: boolean;
+  hostName?: string;
 }
 
 export interface User {
