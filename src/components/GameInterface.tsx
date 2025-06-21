@@ -1,382 +1,244 @@
 import React, { useState, useEffect } from 'react';
-import { GameState, Action } from '../types/game';
+import { GameState, Action, Player } from '../types/game';
 import { Timer } from './Timer';
 import { PlayerWallet } from './PlayerWallet';
 import { AssetsList } from './AssetsList';
 import { PlayerStats } from './PlayerStats';
 import { ActionPanel } from './ActionPanel';
 import { RecentActions } from './RecentActions';
+import { useSocket } from '../context/SocketContext';
 
 interface GameInterfaceProps {
-  gameId: string;
   onExitGame: () => void;
 }
 
-export function GameInterface({ gameId, onExitGame }: GameInterfaceProps) {
-  const [gameState, setGameState] = useState<GameState>({
-    currentRound: 5,
-    maxRounds: 20,
-    timeRemaining: { hours: 0, minutes: 1, seconds: 0 },
-    currentPlayer: {
-      id: 'current',
-      name: 'You',
-      tokens: 1000,
-      assets: { gold: 50, water: 25, oil: 10 },
-      totalAssets: 85
-    },
-    players: [
-      { id: 'a', name: 'Alex Chen', tokens: 1200, assets: { gold: 75, water: 30, oil: 15 }, totalAssets: 120 },
-      { id: 'b', name: 'Sarah Kim', tokens: 800, assets: { gold: 60, water: 25, oil: 10 }, totalAssets: 95 },
-      { id: 'c', name: 'Marcus Johnson', tokens: 1500, assets: { gold: 90, water: 40, oil: 25 }, totalAssets: 155 },
-      { id: 'd', name: 'Elena Rodriguez', tokens: 950, assets: { gold: 45, water: 35, oil: 20 }, totalAssets: 100 }
-    ],
-    marketChanges: [
-      { resource: 'gold', change: 10, percentage: '+10%' },
-      { resource: 'water', change: -5, percentage: '-5%' },
-      { resource: 'oil', change: 20, percentage: '+20%' }
-    ],
-    recentActions: [
-      'Alex Chen bought 10 Gold for 100 tokens',
-      'Sarah Kim sold 5 Water for 60 tokens',
-      'Marcus Johnson sabotaged Elena\'s Oil reserves',
-      'Elena Rodriguez burned 3 Gold to boost market price'
-    ]
-  });
-
-  // Store actions by round for historical viewing
-  const [actionsByRound, setActionsByRound] = useState<{ [round: number]: string[] }>({
-    4: [
-      'Alex Chen sold 15 Gold for 150 tokens',
-      'Sarah Kim bought 8 Water for 120 tokens',
-      'Marcus Johnson burned 2 Oil to boost price',
-      'Elena Rodriguez sabotaged Alex\'s Water'
-    ],
-    3: [
-      'Sarah Kim bought 12 Gold for 120 tokens',
-      'Elena Rodriguez sold 6 Oil for 150 tokens',
-      'Alex Chen burned 1 Water to boost price',
-      'Marcus Johnson bought 5 Gold for 50 tokens'
-    ]
-  });
-
-  // Track which players have acted this round
-  const [playersActedThisRound, setPlayersActedThisRound] = useState<Set<string>>(new Set());
-
+export function GameInterface({ onExitGame }: GameInterfaceProps) {
+  const { socket, gameId, playerId, playerName, clearGameInfo } = useSocket();
+  const [gameState, setGameState] = useState<any>(null);
+  const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [selectedAction, setSelectedAction] = useState<Action['type']>('buy');
   const [selectedResource, setSelectedResource] = useState<'gold' | 'water' | 'oil'>('gold');
   const [amount, setAmount] = useState<number>(1);
   const [targetPlayer, setTargetPlayer] = useState<string>('');
+  const [isHost, setIsHost] = useState(false);
+  const [gameStarted, setGameStarted] = useState(false);
+  const [notifications, setNotifications] = useState<string[]>([]);
+  const [actionsByRound, setActionsByRound] = useState<{ [round: number]: string[] }>({});
 
-  // Simulate real-time player actions and market changes
   useEffect(() => {
-    const simulatePlayerActions = setInterval(() => {
-      setGameState(prev => {
-        const actions = ['buy', 'sell', 'burn'];
-        const resources = ['gold', 'water', 'oil'];
-        const randomPlayer = prev.players[Math.floor(Math.random() * prev.players.length)];
-        const randomAction = actions[Math.floor(Math.random() * actions.length)];
-        const randomResource = resources[Math.floor(Math.random() * resources.length)];
-        const randomAmount = Math.floor(Math.random() * 5) + 1;
+    if (!socket) return;
 
-        const resourcePrices = { gold: 10, water: 15, oil: 25 };
-        const price = resourcePrices[randomResource] * randomAmount;
-
-        let newPlayers = [...prev.players];
-        let newMarketChanges = [...prev.marketChanges];
-        let actionText = '';
-
-        const playerIndex = newPlayers.findIndex(p => p.id === randomPlayer.id);
-        if (playerIndex === -1) return prev;
-
-        switch (randomAction) {
-          case 'buy':
-            if (randomPlayer.tokens >= price) {
-              newPlayers[playerIndex] = {
-                ...randomPlayer,
-                tokens: randomPlayer.tokens - price,
-                assets: {
-                  ...randomPlayer.assets,
-                  [randomResource]: randomPlayer.assets[randomResource] + randomAmount
-                }
-              };
-              actionText = `${randomPlayer.name} bought ${randomAmount} ${randomResource.charAt(0).toUpperCase() + randomResource.slice(1)} for ${price} tokens`;
-            }
-            break;
-
-          case 'sell':
-            if (randomPlayer.assets[randomResource] >= randomAmount) {
-              const sellPrice = Math.floor(price * 0.8);
-              newPlayers[playerIndex] = {
-                ...randomPlayer,
-                tokens: randomPlayer.tokens + sellPrice,
-                assets: {
-                  ...randomPlayer.assets,
-                  [randomResource]: randomPlayer.assets[randomResource] - randomAmount
-                }
-              };
-              actionText = `${randomPlayer.name} sold ${randomAmount} ${randomResource.charAt(0).toUpperCase() + randomResource.slice(1)} for ${sellPrice} tokens`;
-            }
-            break;
-
-          case 'burn':
-            if (randomPlayer.assets[randomResource] >= randomAmount) {
-              newPlayers[playerIndex] = {
-                ...randomPlayer,
-                assets: {
-                  ...randomPlayer.assets,
-                  [randomResource]: randomPlayer.assets[randomResource] - randomAmount
-                }
-              };
-              
-              // Update market changes
-              const marketIndex = newMarketChanges.findIndex(m => m.resource === randomResource);
-              if (marketIndex !== -1) {
-                const newChange = newMarketChanges[marketIndex].change + (randomAmount * 3);
-                newMarketChanges[marketIndex] = {
-                  ...newMarketChanges[marketIndex],
-                  change: newChange,
-                  percentage: `${newChange > 0 ? '+' : ''}${newChange}%`
-                };
-              }
-              actionText = `${randomPlayer.name} burned ${randomAmount} ${randomResource.charAt(0).toUpperCase() + randomResource.slice(1)} to boost market price`;
-            }
-            break;
-        }
-
-        // Update total assets for modified player
-        if (newPlayers[playerIndex]) {
-          newPlayers[playerIndex].totalAssets = 
-            newPlayers[playerIndex].assets.gold + 
-            newPlayers[playerIndex].assets.water + 
-            newPlayers[playerIndex].assets.oil;
-        }
-
-        return {
+    socket.on('game-state', (data) => {
+      setGameState(data);
+      const player = data.players.find((p: any) => p.id === playerId);
+      setCurrentPlayer(player || null);
+      setIsHost(data.host === playerId);
+      setGameStarted(data.status === 'playing');
+      
+      // Update actions by round
+      if (data.recentActions && data.currentRound) {
+        setActionsByRound(prev => ({
           ...prev,
-          players: newPlayers,
-          marketChanges: newMarketChanges,
-          recentActions: actionText && prev.recentActions.length < 4 ? [actionText, ...prev.recentActions] : prev.recentActions
-        };
-      });
-    }, 8000); // Player action every 8 seconds
+          [data.currentRound]: data.recentActions
+        }));
+      }
+    });
 
-    return () => clearInterval(simulatePlayerActions);
-  }, []);
+    socket.on('game-started', () => {
+      setGameStarted(true);
+      addNotification('Game has started!');
+    });
 
-  // Market fluctuations
-  useEffect(() => {
-    const marketFluctuations = setInterval(() => {
-      setGameState(prev => {
-        const newMarketChanges = prev.marketChanges.map(change => {
-          const fluctuation = Math.floor(Math.random() * 10) - 5; // -5 to +5
-          const newChange = Math.max(-50, Math.min(50, change.change + fluctuation));
-          return {
-            ...change,
-            change: newChange,
-            percentage: `${newChange > 0 ? '+' : ''}${newChange}%`
-          };
-        });
+    socket.on('game-finished', (data) => {
+      setGameStarted(false);
+      addNotification('Game finished!');
+      // Calculate winner
+      if (data && data.players) {
+        const winner = data.players.reduce((prev: any, current: any) => 
+          (prev.tokens + prev.totalAssets * 10) > (current.tokens + current.totalAssets * 10) ? prev : current
+        );
+        addNotification(`Winner: ${winner.name}!`);
+      }
+    });
 
-        return {
-          ...prev,
-          marketChanges: newMarketChanges
-        };
-      });
-    }, 5000); // Market changes every 5 seconds
+    socket.on('player-joined', (data) => {
+      addNotification(`${data.playerName} joined the game`);
+    });
 
-    return () => clearInterval(marketFluctuations);
-  }, []);
+    socket.on('player-disconnected', (data) => {
+      addNotification(`${data.playerName} disconnected`);
+    });
 
-  // Timer countdown effect
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setGameState(prev => {
-        const { hours, minutes, seconds } = prev.timeRemaining;
-        let newSeconds = seconds - 1;
-        let newMinutes = minutes;
-        let newHours = hours;
+    socket.on('error', (data) => {
+      addNotification(`Error: ${data.message}`);
+    });
 
-        if (newSeconds < 0) {
-          newSeconds = 59;
-          newMinutes -= 1;
-        }
-        if (newMinutes < 0) {
-          newMinutes = 59;
-          newHours -= 1;
-        }
-        if (newHours < 0) {
-          // Round ended, store current actions and advance round
-          setActionsByRound(prevActions => ({
-            ...prevActions,
-            [prev.currentRound]: [...prev.recentActions]
-          }));
-          
-          // Calculate new asset values based on market trends
-          const updatePlayerAssetValues = (player: any) => {
-            const baseValues = { gold: 10, water: 15, oil: 25 };
-            let updatedAssets = { ...player.assets };
-            let totalValue = 0;
-            
-            // Apply market changes to asset values
-            prev.marketChanges.forEach(market => {
-              const marketMultiplier = 1 + (market.change / 100);
-              const assetCount = updatedAssets[market.resource];
-              const newValue = Math.floor(baseValues[market.resource] * marketMultiplier * assetCount);
-              totalValue += newValue;
-            });
-            
-            return {
-              ...player,
-              assets: updatedAssets,
-              totalAssets: player.assets.gold + player.assets.water + player.assets.oil
-            };
-          };
-          
-          // Generate new market trends for next round
-          const generateNewMarketTrends = () => {
-            return prev.marketChanges.map(change => {
-              const randomChange = Math.floor(Math.random() * 40) - 20; // -20% to +20%
-              return {
-                ...change,
-                change: randomChange,
-                percentage: `${randomChange > 0 ? '+' : ''}${randomChange}%`
-              };
-            });
-          };
-          
-          // Clear player tracking for new round
-          setPlayersActedThisRound(new Set());
-          
-          return {
-            ...prev,
-            currentRound: prev.currentRound + 1,
-            timeRemaining: { hours: 0, minutes: 1, seconds: 0 }, // Reset to 1 minute
-            recentActions: [], // Clear actions for new round
-            marketChanges: generateNewMarketTrends(), // Update market trends
-            currentPlayer: updatePlayerAssetValues(prev.currentPlayer),
-            players: prev.players.map(updatePlayerAssetValues)
-          };
-        }
+    return () => {
+      socket.off('game-state');
+      socket.off('game-started');
+      socket.off('game-finished');
+      socket.off('player-joined');
+      socket.off('player-disconnected');
+      socket.off('error');
+    };
+  }, [socket, playerId]);
 
-        return {
-          ...prev,
-          timeRemaining: { hours: newHours, minutes: newMinutes, seconds: newSeconds }
-        };
-      });
-    }, 1000);
+  const addNotification = (message: string) => {
+    setNotifications(prev => [message, ...prev.slice(0, 4)]);
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n !== message));
+    }, 5000);
+  };
 
-    return () => clearInterval(timer);
-  }, []);
+  const handleStartGame = () => {
+    if (socket && isHost) {
+      socket.emit('start-game');
+    }
+  };
+
+  const handleExitGame = () => {
+    clearGameInfo();
+    onExitGame();
+  };
 
   const handleAction = () => {
-    if (amount <= 0) return;
+    if (!socket || !currentPlayer || amount <= 0) return;
 
-    const resourcePrices = { gold: 10, water: 15, oil: 25 };
-    const price = resourcePrices[selectedResource] * amount;
+    const actionData = {
+      action: selectedAction,
+      resource: selectedResource,
+      amount: amount,
+      targetPlayer: selectedAction === 'sabotage' ? targetPlayer : undefined
+    };
 
-    setGameState(prev => {
-      let newState = { ...prev };
-      let actionText = '';
-
-      switch (selectedAction) {
-        case 'buy':
-          if (prev.currentPlayer.tokens >= price) {
-            newState.currentPlayer = {
-              ...prev.currentPlayer,
-              tokens: prev.currentPlayer.tokens - price,
-              assets: {
-                ...prev.currentPlayer.assets,
-                [selectedResource]: prev.currentPlayer.assets[selectedResource] + amount
-              }
-            };
-            actionText = `You bought ${amount} ${selectedResource.charAt(0).toUpperCase() + selectedResource.slice(1)} for ${price} tokens`;
-          }
-          break;
-
-        case 'sell':
-          if (prev.currentPlayer.assets[selectedResource] >= amount) {
-            const sellPrice = Math.floor(price * 0.8);
-            newState.currentPlayer = {
-              ...prev.currentPlayer,
-              tokens: prev.currentPlayer.tokens + sellPrice,
-              assets: {
-                ...prev.currentPlayer.assets,
-                [selectedResource]: prev.currentPlayer.assets[selectedResource] - amount
-              }
-            };
-            actionText = `You sold ${amount} ${selectedResource.charAt(0).toUpperCase() + selectedResource.slice(1)} for ${sellPrice} tokens`;
-          }
-          break;
-
-        case 'burn':
-          if (prev.currentPlayer.assets[selectedResource] >= amount) {
-            newState.currentPlayer = {
-              ...prev.currentPlayer,
-              assets: {
-                ...prev.currentPlayer.assets,
-                [selectedResource]: prev.currentPlayer.assets[selectedResource] - amount
-              }
-            };
-            // Burning affects market prices
-            const marketIndex = prev.marketChanges.findIndex(m => m.resource === selectedResource);
-            if (marketIndex !== -1) {
-              newState.marketChanges = [...prev.marketChanges];
-              newState.marketChanges[marketIndex] = {
-                ...newState.marketChanges[marketIndex],
-                change: newState.marketChanges[marketIndex].change + amount * 3,
-                percentage: `+${Math.abs(newState.marketChanges[marketIndex].change + amount * 3)}%`
-              };
-            }
-            actionText = `You burned ${amount} ${selectedResource.charAt(0).toUpperCase() + selectedResource.slice(1)} to boost market price`;
-          }
-          break;
-
-        case 'sabotage':
-          if (prev.currentPlayer.tokens >= 100 && targetPlayer) {
-            newState.currentPlayer = {
-              ...prev.currentPlayer,
-              tokens: prev.currentPlayer.tokens - 100
-            };
-            // Find target player and reduce their assets
-            const targetIndex = prev.players.findIndex(p => p.name === targetPlayer);
-            if (targetIndex !== -1) {
-              newState.players = [...prev.players];
-              newState.players[targetIndex] = {
-                ...newState.players[targetIndex],
-                assets: {
-                  ...newState.players[targetIndex].assets,
-                  [selectedResource]: Math.max(0, newState.players[targetIndex].assets[selectedResource] - amount)
-                }
-              };
-              // Update target's total assets
-              newState.players[targetIndex].totalAssets = 
-                newState.players[targetIndex].assets.gold + 
-                newState.players[targetIndex].assets.water + 
-                newState.players[targetIndex].assets.oil;
-            }
-            actionText = `You sabotaged ${targetPlayer}'s ${selectedResource.charAt(0).toUpperCase() + selectedResource.slice(1)} reserves`;
-          }
-          break;
-      }
-
-      // Update total assets
-      newState.currentPlayer.totalAssets = 
-        newState.currentPlayer.assets.gold + 
-        newState.currentPlayer.assets.water + 
-        newState.currentPlayer.assets.oil;
-
-        // Add action to recent actions (max 4 per round - 1 per player)
-        if (actionText && prev.recentActions.length < 4) {
-          newState.recentActions = [actionText, ...prev.recentActions];
-        }
-
-      return newState;
-    });
+    socket.emit('player-action', actionData);
 
     // Reset form
     setAmount(1);
     setTargetPlayer('');
   };
+
+  // Loading state
+  if (!gameState) {
+    return (
+      <div className="min-h-screen bg-pixel-black scanlines p-6 font-pixel flex items-center justify-center">
+        <div className="bg-pixel-dark-gray pixel-panel border-pixel-gray p-8">
+          <h2 className="text-pixel-xl font-bold text-pixel-primary text-center mb-4">
+            Loading Game...
+          </h2>
+          <p className="text-pixel-base-gray text-center">Game ID: {gameId}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Waiting room state
+  if (!gameStarted) {
+    return (
+      <div className="min-h-screen bg-pixel-black scanlines p-6 font-pixel">
+        <div className="max-w-4xl mx-auto">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-6">
+            <h1 className="text-pixel-2xl font-bold text-pixel-primary uppercase tracking-wider">
+              Waiting Room
+            </h1>
+            <button
+              onClick={handleExitGame}
+              className="px-4 py-2 bg-pixel-error hover:bg-pixel-warning text-pixel-black font-bold text-pixel-sm pixel-btn border-pixel-black uppercase tracking-wider"
+            >
+              Exit Game
+            </button>
+          </div>
+
+          {/* Game Info */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div className="bg-pixel-dark-gray pixel-panel border-pixel-gray p-6">
+              <h3 className="text-pixel-lg font-bold text-pixel-primary mb-4">Game Info</h3>
+              <div className="space-y-2 text-pixel-base-gray">
+                <p><span className="text-pixel-primary">Game ID:</span> {gameId}</p>
+                <p><span className="text-pixel-primary">Host:</span> {isHost ? 'You' : gameState.players.find((p: any) => p.id === gameState.host)?.name || 'Unknown'}</p>
+                <p><span className="text-pixel-primary">Players:</span> {gameState.players.length}/4</p>
+                <p><span className="text-pixel-primary">Status:</span> Waiting for players</p>
+              </div>
+            </div>
+
+            <div className="bg-pixel-dark-gray pixel-panel border-pixel-gray p-6">
+              <h3 className="text-pixel-lg font-bold text-pixel-primary mb-4">How to Invite</h3>
+              <div className="space-y-2 text-pixel-base-gray text-pixel-sm">
+                <p>1. Share the Game ID with friends</p>
+                <p>2. They join using "Join by ID"</p>
+                <p>3. Host starts the game when ready</p>
+              </div>
+              <button
+                onClick={() => navigator.clipboard.writeText(gameId || '')}
+                className="mt-4 w-full px-4 py-2 bg-pixel-accent hover:bg-pixel-success text-pixel-black font-bold text-pixel-sm pixel-btn border-pixel-black uppercase tracking-wider"
+              >
+                Copy Game ID
+              </button>
+            </div>
+          </div>
+
+          {/* Players List */}
+          <div className="bg-pixel-dark-gray pixel-panel border-pixel-gray p-6 mb-6">
+            <h3 className="text-pixel-lg font-bold text-pixel-primary mb-4">Players ({gameState.players.length}/4)</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {gameState.players.map((player: any, index: number) => (
+                <div key={player.id} className="bg-pixel-gray pixel-panel border-pixel-light-gray p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-pixel-primary font-bold">
+                      {player.name} {player.id === playerId && '(You)'}
+                    </span>
+                    <div className="flex items-center space-x-2">
+                      {player.id === gameState.host && (
+                        <span className="text-pixel-xs bg-pixel-warning text-pixel-black px-2 py-1 pixel-notification border-pixel-black">
+                          HOST
+                        </span>
+                      )}
+                      <div className={`w-3 h-3 pixel-notification border-pixel-black ${
+                        player.connected ? 'bg-pixel-success' : 'bg-pixel-error'
+                      }`} title={player.connected ? 'Connected' : 'Disconnected'} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {Array.from({ length: 4 - gameState.players.length }).map((_, index) => (
+                <div key={`empty-${index}`} className="bg-pixel-black pixel-panel border-pixel-gray p-4">
+                  <span className="text-pixel-base-gray font-bold">Waiting for player...</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Start Game Button */}
+          {isHost && (
+            <div className="text-center">
+              <button
+                onClick={handleStartGame}
+                disabled={gameState.players.length < 2}
+                className="px-8 py-4 bg-pixel-primary hover:bg-pixel-success text-pixel-black font-bold text-pixel-lg pixel-btn border-pixel-black uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {gameState.players.length < 2 ? 'Need 2+ Players' : 'Start Game'}
+              </button>
+              <p className="text-pixel-base-gray text-pixel-xs mt-2">
+                Minimum 2 players required to start
+              </p>
+            </div>
+          )}
+
+          {/* Notifications */}
+          {notifications.length > 0 && (
+            <div className="fixed top-4 right-4 space-y-2 z-50">
+              {notifications.map((notification, index) => (
+                <div key={index} className="bg-pixel-accent text-pixel-black p-3 pixel-panel border-pixel-black">
+                  <p className="font-bold text-pixel-sm">{notification}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-pixel-black scanlines p-6 font-pixel">
@@ -401,7 +263,7 @@ export function GameInterface({ gameId, onExitGame }: GameInterfaceProps) {
           {/* Left Column - Compact Info Panels */}
           <div className="lg:col-span-3 space-y-3">
             <Timer timeRemaining={gameState.timeRemaining} />
-            <AssetsList assets={gameState.currentPlayer.assets} marketChanges={gameState.marketChanges} />
+            <AssetsList assets={currentPlayer?.assets || { gold: 0, water: 0, oil: 0 }} marketChanges={gameState.marketChanges} />
             <RecentActions 
               actions={gameState.recentActions} 
               currentRound={gameState.currentRound} 
@@ -413,8 +275,8 @@ export function GameInterface({ gameId, onExitGame }: GameInterfaceProps) {
           {/* Middle Column - Player Info */}
           <div className="lg:col-span-5 space-y-3">
             <PlayerWallet 
-              tokens={gameState.currentPlayer.tokens} 
-              assets={gameState.currentPlayer.assets} 
+              tokens={currentPlayer?.tokens || 0} 
+              assets={currentPlayer?.assets || { gold: 0, water: 0, oil: 0 }} 
             />
             <PlayerStats players={gameState.players} />
           </div>
@@ -427,7 +289,7 @@ export function GameInterface({ gameId, onExitGame }: GameInterfaceProps) {
               amount={amount}
               targetPlayer={targetPlayer}
               players={gameState.players}
-              currentPlayer={gameState.currentPlayer}
+              currentPlayer={currentPlayer || { id: '', name: '', tokens: 0, assets: { gold: 0, water: 0, oil: 0 }, totalAssets: 0 }}
               onActionChange={setSelectedAction}
               onResourceChange={setSelectedResource}
               onAmountChange={setAmount}

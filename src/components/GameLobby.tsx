@@ -1,58 +1,66 @@
-import React, { useState } from 'react';
-import { Game } from '../types/game';
+import React, { useState, useEffect } from 'react';
+import { useSocket } from '../context/SocketContext';
 
 interface GameLobbyProps {
-  games: Game[];
-  onJoinGame: (gameId: string) => void;
-  onViewGame: (gameId: string) => void;
-  onStartNewGame: () => void;
-  onPlayGame: (gameId: string) => void;
-  onCreateGame?: (gameName: string) => string; // Returns the created game ID
+  onPlayGame: () => void;
 }
 
-export function GameLobby({ games, onJoinGame, onViewGame, onStartNewGame, onPlayGame, onCreateGame }: GameLobbyProps) {
+export function GameLobby({ onPlayGame }: GameLobbyProps) {
+  const { socket, connected, setGameInfo } = useSocket();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
+  const [playerName, setPlayerName] = useState('');
   const [gameName, setGameName] = useState('');
-  const [gameType, setGameType] = useState<'public' | 'private'>('public');
   const [createdGameId, setCreatedGameId] = useState<string | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
   const [joinGameId, setJoinGameId] = useState('');
-  const [joinError, setJoinError] = useState(false);
+  const [joinError, setJoinError] = useState('');
+  const [error, setError] = useState('');
 
-  const generateGameId = () => {
-    return Math.random().toString(36).substr(2, 9).toUpperCase();
-  };
+  useEffect(() => {
+    if (!socket) return;
 
-  const handleStartGame = () => {
-    setShowCreateModal(true);
-  };
+    socket.on('game-created', (data) => {
+      setCreatedGameId(data.gameId);
+      setGameInfo(data.gameId, data.playerId, playerName);
+      setGameName('');
+      setPlayerName('');
+    });
+
+    socket.on('game-joined', (data) => {
+      setGameInfo(data.gameId, data.playerId, playerName);
+      onPlayGame();
+    });
+
+    socket.on('error', (data) => {
+      setError(data.message);
+      if (showJoinModal) {
+        setJoinError(data.message);
+      }
+    });
+
+    return () => {
+      socket.off('game-created');
+      socket.off('game-joined');
+      socket.off('error');
+    };
+  }, [socket, onPlayGame, showJoinModal]);
 
   const handleCreateGame = () => {
-    if (gameName.trim()) {
-      let gameId: string;
-      if (onCreateGame) {
-        gameId = onCreateGame(gameName.trim());
-      } else {
-        gameId = generateGameId();
-      }
-      setCreatedGameId(gameId);
-      setGameName('');
+    if (gameName.trim() && playerName.trim() && socket) {
+      socket.emit('create-game', {
+        gameName: gameName.trim(),
+        playerName: playerName.trim()
+      });
     }
   };
 
   const handleJoinById = () => {
-    if (joinGameId.trim()) {
-      // Simulate checking if game exists (in real app, this would be an API call)
-      const gameExists = games.some(game => game.id === joinGameId.trim());
-      
-      if (gameExists) {
-        onJoinGame(joinGameId.trim());
-        handleCloseJoinModal();
-      } else {
-        setJoinError(true);
-        setTimeout(() => setJoinError(false), 3000); // Reset error after 3 seconds
-      }
+    if (joinGameId.trim() && playerName.trim() && socket) {
+      socket.emit('join-game', {
+        gameId: joinGameId.trim(),
+        playerName: playerName.trim()
+      });
     }
   };
 
@@ -68,108 +76,76 @@ export function GameLobby({ games, onJoinGame, onViewGame, onStartNewGame, onPla
     }
   };
 
-  const handleCloseModal = () => {
+  const handleCloseCreateModal = () => {
     setShowCreateModal(false);
     setCreatedGameId(null);
     setGameName('');
-    setGameType('public');
+    setPlayerName('');
     setCopySuccess(false);
+    setError('');
   };
 
   const handleCloseJoinModal = () => {
     setShowJoinModal(false);
     setJoinGameId('');
-    setJoinError(false);
-  };
-  const getStatusColor = (status: Game['status']) => {
-    switch (status) {
-      case 'Open':
-        return 'bg-pixel-success text-pixel-black pixel-notification border-pixel-black';
-      case 'In Progress':
-        return 'bg-pixel-warning text-pixel-black pixel-notification border-pixel-black';
-      case 'Finished':
-        return 'bg-pixel-gray text-pixel-primary pixel-notification border-pixel-black';
-      default:
-        return 'bg-pixel-gray text-pixel-primary pixel-notification border-pixel-black';
-    }
+    setJoinError('');
+    setPlayerName('');
+    setError('');
   };
 
-  const getActionButton = (game: Game) => {
-    if (game.status === 'Open') {
-      return (
-        <div className="flex space-x-2">
-          <button
-            onClick={() => onJoinGame(game.id)}
-            className="px-4 py-2 text-pixel-sm font-bold text-pixel-accent hover:text-pixel-black hover:bg-pixel-accent pixel-btn border-pixel-accent uppercase tracking-wider"
-          >
-            Join
-          </button>
-          <button
-            onClick={() => onPlayGame(game.id)}
-            className="px-4 py-2 text-pixel-sm font-bold bg-pixel-primary hover:bg-pixel-success text-pixel-black pixel-btn border-pixel-black uppercase tracking-wider"
-          >
-            Play
-          </button>
-        </div>
-      );
-    }
-    return (
-      <button
-        onClick={() => onViewGame(game.id)}
-        className="px-4 py-2 text-pixel-sm font-bold text-pixel-light-gray hover:text-pixel-black hover:bg-pixel-light-gray pixel-btn border-pixel-light-gray uppercase tracking-wider"
-      >
-        View
-      </button>
-    );
+  const handlePlayCreatedGame = () => {
+    handleCloseCreateModal();
+    onPlayGame();
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-8">
+    <div className="max-w-4xl mx-auto px-6 py-8">
       <h2 className="text-pixel-2xl font-bold text-pixel-primary mb-8 uppercase tracking-wider text-center">
-        Game Lobby
+        Multiplayer Lobby
       </h2>
       
-      <div className="bg-pixel-dark-gray pixel-panel border-pixel-gray overflow-hidden">
-        <div className="grid grid-cols-4 gap-4 px-6 py-4 bg-pixel-gray border-b-4 border-pixel-light-gray">
-          <div className="text-pixel-sm font-bold text-pixel-primary uppercase tracking-wider">Game Name</div>
-          <div className="text-pixel-sm font-bold text-pixel-primary uppercase tracking-wider">Status</div>
-          <div className="text-pixel-sm font-bold text-pixel-primary uppercase tracking-wider">Players</div>
-          <div className="text-pixel-sm font-bold text-pixel-primary uppercase tracking-wider">Action</div>
+      {!connected && (
+        <div className="bg-pixel-error p-4 pixel-panel border-pixel-error mb-6">
+          <p className="text-pixel-black text-center font-bold">
+            Connecting to server...
+          </p>
         </div>
-        
-        <div className="divide-y divide-pixel-gray">
-          {games.map((game) => (
-            <div key={game.id} className="grid grid-cols-4 gap-4 px-6 py-4 hover:bg-pixel-gray transition-colors">
-              <div className="text-pixel-primary font-bold text-pixel-base">{game.name}</div>
-              <div>
-                <span className={`px-3 py-1 text-pixel-xs font-bold ${getStatusColor(game.status)} uppercase tracking-wider`}>
-                  {game.status}
-                </span>
-              </div>
-              <div className="text-pixel-light-gray text-pixel-base font-bold">
-                {game.currentPlayers}/{game.maxPlayers}
-              </div>
-              <div>
-                {getActionButton(game)}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      )}
 
-      <div className="flex justify-between items-center mt-8">
-        <button
-          onClick={() => setShowJoinModal(true)}
-          className="px-6 py-3 bg-pixel-accent hover:bg-pixel-success text-pixel-black font-bold text-pixel-base pixel-btn border-pixel-black uppercase tracking-wider"
-        >
-          Join by ID
-        </button>
-        <button
-          onClick={handleStartGame}
-          className="px-8 py-3 bg-pixel-secondary hover:bg-pixel-warning text-pixel-black font-bold text-pixel-lg pixel-btn border-pixel-black uppercase tracking-wider"
-        >
-          Start Game
-        </button>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Create Game Card */}
+        <div className="bg-pixel-dark-gray pixel-panel border-pixel-gray p-6">
+          <h3 className="text-pixel-xl font-bold text-pixel-primary mb-4 uppercase tracking-wider text-center">
+            Create Game
+          </h3>
+          <p className="text-pixel-base-gray text-pixel-sm mb-6 text-center">
+            Start a new multiplayer game and invite friends
+          </p>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            disabled={!connected}
+            className="w-full px-6 py-4 bg-pixel-primary hover:bg-pixel-success text-pixel-black font-bold text-pixel-base pixel-btn border-pixel-black uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Create New Game
+          </button>
+        </div>
+
+        {/* Join Game Card */}
+        <div className="bg-pixel-dark-gray pixel-panel border-pixel-gray p-6">
+          <h3 className="text-pixel-xl font-bold text-pixel-primary mb-4 uppercase tracking-wider text-center">
+            Join Game
+          </h3>
+          <p className="text-pixel-base-gray text-pixel-sm mb-6 text-center">
+            Enter a game ID to join an existing game
+          </p>
+          <button
+            onClick={() => setShowJoinModal(true)}
+            disabled={!connected}
+            className="w-full px-6 py-4 bg-pixel-accent hover:bg-pixel-success text-pixel-black font-bold text-pixel-base pixel-btn border-pixel-black uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Join by Game ID
+          </button>
+        </div>
       </div>
 
       {/* Create Game Modal */}
@@ -180,59 +156,44 @@ export function GameLobby({ games, onJoinGame, onViewGame, onStartNewGame, onPla
               Create New Game
             </h3>
             
+            {error && (
+              <div className="bg-pixel-error p-3 pixel-panel border-pixel-error mb-4">
+                <p className="text-pixel-black text-pixel-sm font-bold text-center">
+                  {error}
+                </p>
+              </div>
+            )}
+            
             {!createdGameId ? (
               <>
+                <input
+                  type="text"
+                  value={playerName}
+                  onChange={(e) => setPlayerName(e.target.value)}
+                  placeholder="Enter your name"
+                  className="w-full px-4 py-3 text-pixel-base font-bold bg-pixel-dark-gray text-pixel-base-gray border-4 border-pixel-gray focus:border-pixel-primary focus:outline-none mb-4"
+                  maxLength={20}
+                />
+                
                 <input
                   type="text"
                   value={gameName}
                   onChange={(e) => setGameName(e.target.value)}
                   placeholder="Enter game name"
-                  className="w-full px-4 py-3 text-pixel-base font-bold bg-pixel-dark-gray text-pixel-base-gray border-4 border-pixel-gray focus:border-pixel-primary focus:outline-none mb-4"
+                  className="w-full px-4 py-3 text-pixel-base font-bold bg-pixel-dark-gray text-pixel-base-gray border-4 border-pixel-gray focus:border-pixel-primary focus:outline-none mb-6"
                   maxLength={30}
                 />
-                
-                {/* Game Type Selection */}
-                <div className="mb-6">
-                  <p className="text-pixel-sm font-bold text-pixel-primary mb-3 uppercase tracking-wider text-center">
-                    Game Type
-                  </p>
-                  <div className="flex space-x-3">
-                    <button
-                      onClick={() => setGameType('public')}
-                      className={`flex-1 px-4 py-3 font-bold text-pixel-sm pixel-btn uppercase tracking-wider ${
-                        gameType === 'public'
-                          ? 'bg-pixel-success text-pixel-black border-pixel-black'
-                          : 'bg-pixel-gray hover:bg-pixel-light-gray text-pixel-primary border-pixel-gray'
-                      }`}
-                    >
-                      Public
-                    </button>
-                    <button
-                      onClick={() => setGameType('private')}
-                      className={`flex-1 px-4 py-3 font-bold text-pixel-sm pixel-btn uppercase tracking-wider ${
-                        gameType === 'private'
-                          ? 'bg-pixel-warning text-pixel-black border-pixel-black'
-                          : 'bg-pixel-gray hover:bg-pixel-light-gray text-pixel-primary border-pixel-gray'
-                      }`}
-                    >
-                      Private
-                    </button>
-                  </div>
-                  <p className="text-pixel-xs text-pixel-base-gray mt-2 text-center">
-                    {gameType === 'public' ? 'Anyone can join this game' : 'Only players with ID can join'}
-                  </p>
-                </div>
                 
                 <div className="flex space-x-4">
                   <button
                     onClick={handleCreateGame}
-                    disabled={!gameName.trim()}
+                    disabled={!gameName.trim() || !playerName.trim()}
                     className="flex-1 px-6 py-3 bg-pixel-primary hover:bg-pixel-success text-pixel-black font-bold text-pixel-base pixel-btn border-pixel-black uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Create
                   </button>
                   <button
-                    onClick={handleCloseModal}
+                    onClick={handleCloseCreateModal}
                     className="flex-1 px-6 py-3 bg-pixel-gray hover:bg-pixel-light-gray text-pixel-primary font-bold text-pixel-base pixel-btn border-pixel-gray uppercase tracking-wider"
                   >
                     Cancel
@@ -249,7 +210,7 @@ export function GameLobby({ games, onJoinGame, onViewGame, onStartNewGame, onPla
                     <p className="text-pixel-base font-bold text-pixel-primary mb-4">
                       Game ID:
                     </p>
-                    <div className="flex items-center justify-center space-x-3">
+                    <div className="flex items-center justify-center space-x-3 mb-4">
                       <span className="text-pixel-lg font-bold text-pixel-secondary bg-pixel-black px-4 py-2 pixel-notification border-pixel-secondary">
                         {createdGameId}
                       </span>
@@ -261,14 +222,25 @@ export function GameLobby({ games, onJoinGame, onViewGame, onStartNewGame, onPla
                         {copySuccess ? '✓ Copied!' : 'Copy'}
                       </button>
                     </div>
+                    <p className="text-pixel-xs text-pixel-base-gray">
+                      Share this ID with friends to let them join!
+                    </p>
                   </div>
                 </div>
-                <button
-                  onClick={handleCloseModal}
-                  className="w-full px-6 py-3 bg-pixel-primary hover:bg-pixel-success text-pixel-black font-bold text-pixel-base pixel-btn border-pixel-black uppercase tracking-wider"
-                >
-                  Done
-                </button>
+                <div className="flex space-x-4">
+                  <button
+                    onClick={handlePlayCreatedGame}
+                    className="flex-1 px-6 py-3 bg-pixel-primary hover:bg-pixel-success text-pixel-black font-bold text-pixel-base pixel-btn border-pixel-black uppercase tracking-wider"
+                  >
+                    Enter Game
+                  </button>
+                  <button
+                    onClick={handleCloseCreateModal}
+                    className="flex-1 px-6 py-3 bg-pixel-gray hover:bg-pixel-light-gray text-pixel-primary font-bold text-pixel-base pixel-btn border-pixel-gray uppercase tracking-wider"
+                  >
+                    Close
+                  </button>
+                </div>
               </>
             )}
           </div>
@@ -284,15 +256,39 @@ export function GameLobby({ games, onJoinGame, onViewGame, onStartNewGame, onPla
             <h3 className={`text-pixel-xl font-bold text-center mb-6 uppercase tracking-wider ${
               joinError ? 'text-pixel-black' : 'text-pixel-primary'
             }`}>
-              {joinError ? 'Game Not Found!' : 'Join by Game ID'}
+              {joinError ? 'Error!' : 'Join Game'}
             </h3>
+            
+            {joinError && (
+              <div className="bg-pixel-black p-3 pixel-panel border-pixel-error mb-4">
+                <p className="text-pixel-error text-pixel-sm font-bold text-center uppercase tracking-wider">
+                  {joinError}
+                </p>
+              </div>
+            )}
+            
+            <input
+              type="text"
+              value={playerName}
+              onChange={(e) => {
+                setPlayerName(e.target.value);
+                if (joinError) setJoinError(''); // Reset error when typing
+              }}
+              placeholder="Enter your name"
+              className={`w-full px-4 py-3 text-pixel-base font-bold border-4 focus:outline-none mb-4 ${
+                joinError 
+                  ? 'bg-pixel-dark-gray text-pixel-error border-pixel-error focus:border-pixel-error'
+                  : 'bg-pixel-dark-gray text-pixel-base-gray border-pixel-gray focus:border-pixel-primary'
+              }`}
+              maxLength={20}
+            />
             
             <input
               type="text"
               value={joinGameId}
               onChange={(e) => {
                 setJoinGameId(e.target.value.toUpperCase());
-                if (joinError) setJoinError(false); // Reset error when typing
+                if (joinError) setJoinError(''); // Reset error when typing
               }}
               placeholder="Enter Game ID"
               className={`w-full px-4 py-3 text-pixel-base font-bold border-4 focus:outline-none mb-6 uppercase tracking-wider text-center ${
@@ -303,18 +299,10 @@ export function GameLobby({ games, onJoinGame, onViewGame, onStartNewGame, onPla
               maxLength={9}
             />
             
-            {joinError && (
-              <div className="bg-pixel-black p-3 pixel-panel border-pixel-error mb-4">
-                <p className="text-pixel-error text-pixel-sm font-bold text-center uppercase tracking-wider">
-                  Game ID not found. Please check and try again.
-                </p>
-              </div>
-            )}
-            
             <div className="flex space-x-4">
               <button
                 onClick={handleJoinById}
-                disabled={!joinGameId.trim()}
+                disabled={!joinGameId.trim() || !playerName.trim()}
                 className={`flex-1 px-6 py-3 font-bold text-pixel-base pixel-btn uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed ${
                   joinError
                     ? 'bg-pixel-black hover:bg-pixel-dark-gray text-pixel-error border-pixel-error'

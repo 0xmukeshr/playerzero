@@ -4,50 +4,37 @@ import { HomePage } from './components/HomePage';
 import { GameLobby } from './components/GameLobby';
 import { ProfilePage } from './components/ProfilePage';
 import { GameInterface } from './components/GameInterface';
-import { useGames } from './hooks/useGames';
+import { SocketProvider } from './context/SocketContext';
 
 function App() {
   const [currentPage, setCurrentPage] = useState('home');
-  const [currentGameId, setCurrentGameId] = useState<string | null>(null);
-  const { games, joinGame, viewGame, startNewGame } = useGames();
 
   const handleNavigate = (page: string) => {
     setCurrentPage(page);
-    setCurrentGameId(null);
   };
 
   const handleNavigateToGames = () => {
     setCurrentPage('games');
   };
 
-  const handlePlayGame = (gameId: string) => {
-    setCurrentGameId(gameId);
+  const handlePlayGame = () => {
     setCurrentPage('game');
   };
 
   const handleExitGame = () => {
-    setCurrentGameId(null);
     setCurrentPage('games');
   };
 
   const renderCurrentPage = () => {
-    if (currentPage === 'game' && currentGameId) {
-      return <GameInterface gameId={currentGameId} onExitGame={handleExitGame} />;
+    if (currentPage === 'game') {
+      return <GameInterface onExitGame={handleExitGame} />;
     }
 
     switch (currentPage) {
       case 'home':
         return <HomePage onNavigateToGames={handleNavigateToGames} />;
       case 'games':
-        return (
-          <GameLobby
-            games={games}
-            onJoinGame={joinGame}
-            onViewGame={viewGame}
-            onStartNewGame={startNewGame}
-            onPlayGame={handlePlayGame}
-          />
-        );
+        return <GameLobby onPlayGame={handlePlayGame} />;
       case 'profile':
         return <ProfilePage />;
       default:
@@ -55,17 +42,23 @@ function App() {
     }
   };
 
-  if (currentPage === 'game' && currentGameId) {
-    return renderCurrentPage();
+  if (currentPage === 'game') {
+    return (
+      <SocketProvider>
+        {renderCurrentPage()}
+      </SocketProvider>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-pixel-black scanlines font-pixel">
-      <Header currentPage={currentPage} onNavigate={handleNavigate} />
-      <main className="relative">
-        {renderCurrentPage()}
-      </main>
-    </div>
+    <SocketProvider>
+      <div className="min-h-screen bg-pixel-black scanlines font-pixel">
+        <Header currentPage={currentPage} onNavigate={handleNavigate} />
+        <main className="relative">
+          {renderCurrentPage()}
+        </main>
+      </div>
+    </SocketProvider>
   );
 }
 
