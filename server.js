@@ -1,7 +1,12 @@
+import dotenv from 'dotenv';
+// Load environment variables FIRST
+dotenv.config();
+
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
+import { GameDatabase } from './src/services/database.js';
 
 const app = express();
 const server = createServer(app);
@@ -16,8 +21,9 @@ const io = new Server(server, {
 app.use(cors());
 app.use(express.json());
 
-// Store active games
-const games = new Map();
+// Store active game states in memory for real-time operations
+// Database stores persistent data, memory stores real-time state
+const activeGameStates = new Map();
 const players = new Map(); // socketId -> playerInfo
 
 // Helper function to generate game ID
@@ -67,116 +73,241 @@ io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
   // Get public games list
-  socket.on('get-public-games', () => {
-    const publicGames = [];
-    games.forEach((gameState, gameId) => {
-      if (!gameState.isPrivate && gameState.status === 'waiting') {
-        publicGames.push({
-          id: gameId,
-          name: gameState.gameName,
-          status: gameState.players.length >= 4 ? 'Full' : 'Open',
-          currentPlayers: gameState.players.length,
-          maxPlayers: 4,
-          hostName: gameState.players.find(p => p.id === gameState.host)?.name || 'Unknown',
-          createdAt: gameState.createdAt
-        });
-      }
-    });
-    socket.emit('public-games-list', publicGames);
+  socket.on('get-public-games', async () => {
+    try {
+      const publicGames = await GameDatabase.getPublicGames();
+      
+      // Format for frontend
+      const formattedGames = publicGames.map(game => ({
+        id: game.game_id,
+        name: game.game_name,
+        status: game.current_players >= game.max_players ? 'Full' : 'Open',
+        currentPlayers: game.current_players,
+        maxPlayers: game.max_players,
+        hostName: game.host_name || 'Unknown',
+        createdAt: game.created_at
+      }));
+      
+      socket.emit('public-games-list', formattedGames);
+    } catch (error) {
+      console.error('Error fetching public games:', error);
+      socket.emit('public-games-list', []);
+    }
   });
 
   // Create a new game
-  socket.on('create-game', (data) => {
-    const { gameName, playerName, isPrivate } = data;
-    const gameId = generateGameId();
-    const playerId = generatePlayerId();
-    
-    const gameState = createInitialGameState();
-    const player = createPlayer(playerId, playerName, socket.id);
-    
-    gameState.players.push(player);
-    gameState.host = playerId;
-    gameState.gameName = gameName;
-    gameState.isPrivate = isPrivate || false;
-    gameState.createdAt = new Date();
-    
-    games.set(gameId, gameState);
-    players.set(socket.id, { gameId, playerId, playerName });
-    
-    // Join the game room
-    socket.join(gameId);
-    
-    socket.emit('game-created', { gameId, playerId });
-    socket.emit('game-state', gameState);
-    
-    console.log(`Game created: ${gameId} by ${playerName}`);
+  socket.on('create-game', async (data) => {
+    try {
+      const { gameName, playerName, isPrivate } = data;
+      const gameId = generateGameId();
+      const playerId = generatePlayerId();
+      
+      const gameState = createInitialGameState();
+      const player = createPlayer(playerId, playerName, socket.id);
+      
+      gameState.players.push(player);
+      gameState.host = playerId;
+      gameState.gameName = gameName;
+      gameState.isPrivate = isPrivate || false;
+      gameState.createdAt = new Date();
+      
+      // Save to database
+      const dbGame = await GameDatabase.createGame({
+        gameName,
+        gameId,
+        isPrivate: isPrivate || false,
+        players: [player],
+        gameState,
+        hostPlayerId: playerId
+      });
+      
+      if (!dbGame) {
+        socket.emit('error', { message: 'Failed to create game' });
+        return;
+      }
+      
+      // Store in memory for real-time operations
+      activeGameStates.set(gameId, gameState);
+      players.set(socket.id, { gameId, playerId, playerName });
+      
+      // Join the game room
+      socket.join(gameId);
+      
+      console.log(`Server: Emitting game-created and game-state for game ${gameId}`);
+      socket.emit('game-created', { gameId, playerId });
+      
+      // Add a small delay to ensure game-created is processed first
+      setTimeout(() => {
+        console.log(`Server: Sending initial game state for game ${gameId}`);
+        socket.emit('game-state', gameState);
+      }, 100);
+      
+      console.log(`Game created: ${gameId} by ${playerName}`);
+    } catch (error) {
+      console.error('Error creating game:', error);
+      socket.emit('error', { message: 'Failed to create game' });
+    }
   });
 
   // Join an existing game
-  socket.on('join-game', (data) => {
-    const { gameId, playerName } = data;
-    const game = games.get(gameId);
-    
-    if (!game) {
-      socket.emit('error', { message: 'Game not found' });
-      return;
+  socket.on('join-game', async (data) => {
+    try {
+      const { gameId, playerName } = data;
+      
+      // Check if game exists in memory first, otherwise load from database
+      let game = activeGameStates.get(gameId);
+      if (!game) {
+        const dbGame = await GameDatabase.getGame(gameId);
+        if (!dbGame) {
+          socket.emit('error', { message: 'Game not found' });
+          return;
+        }
+        
+        // Reconstruct game state from database
+        game = {
+          ...dbGame.game_state,
+          players: dbGame.players,
+          gameName: dbGame.game_name,
+          isPrivate: dbGame.visibility === 'private',
+          status: dbGame.status,
+          host: dbGame.host_player_id,
+          createdAt: new Date(dbGame.created_at)
+        };
+        
+        activeGameStates.set(gameId, game);
+      }
+      
+      if (game.players.length >= 4) {
+        socket.emit('error', { message: 'Game is full' });
+        return;
+      }
+      
+      if (game.status !== 'waiting') {
+        socket.emit('error', { message: 'Game already in progress' });
+        return;
+      }
+      
+      const playerId = generatePlayerId();
+      const player = createPlayer(playerId, playerName, socket.id);
+      
+      game.players.push(player);
+      activeGameStates.set(gameId, game);
+      players.set(socket.id, { gameId, playerId, playerName });
+      
+      // Update database
+      await GameDatabase.addPlayerToGame(gameId, player);
+      
+      // Join the game room
+      socket.join(gameId);
+      
+      console.log(`Server: Player ${playerName} joined game ${gameId}, sending game state`);
+      
+      // Notify all players in the game
+      socket.emit('game-joined', { gameId, playerId });
+      
+      // Send game state to all players
+      setTimeout(() => {
+        console.log(`Server: Broadcasting game state to all players in game ${gameId}`);
+        io.to(gameId).emit('game-state', game);
+        io.to(gameId).emit('player-joined', { playerName });
+      }, 100);
+      
+      console.log(`${playerName} joined game: ${gameId}`);
+    } catch (error) {
+      console.error('Error joining game:', error);
+      socket.emit('error', { message: 'Failed to join game' });
     }
-    
-    if (game.players.length >= 4) {
-      socket.emit('error', { message: 'Game is full' });
-      return;
+  });
+
+  // Get current game state (useful when player enters an existing game)
+  socket.on('get-game-state', async (data) => {
+    try {
+      console.log('Server: get-game-state request received:', data);
+      const { gameId } = data;
+      
+      if (!gameId) {
+        console.error('Server: No gameId provided in get-game-state request');
+        socket.emit('error', { message: 'No game ID provided' });
+        return;
+      }
+      
+      // Check if game exists in memory first
+      let game = activeGameStates.get(gameId);
+      console.log(`Server: Game ${gameId} found in memory:`, !!game);
+      
+      if (!game) {
+        console.log(`Server: Game ${gameId} not in memory, checking database...`);
+        // Try to load from database
+        const dbGame = await GameDatabase.getGame(gameId);
+        if (!dbGame) {
+          console.error(`Server: Game ${gameId} not found in database`);
+          socket.emit('error', { message: 'Game not found' });
+          return;
+        }
+        
+        console.log(`Server: Game ${gameId} found in database, reconstructing state`);
+        // Reconstruct game state from database
+        game = {
+          ...dbGame.game_state,
+          players: dbGame.players,
+          gameName: dbGame.game_name,
+          isPrivate: dbGame.visibility === 'private',
+          status: dbGame.status,
+          host: dbGame.host_player_id,
+          createdAt: new Date(dbGame.created_at)
+        };
+        
+        activeGameStates.set(gameId, game);
+      }
+      
+      console.log(`Server: Sending game state to player for game: ${gameId}`, {
+        status: game.status,
+        playerCount: game.players?.length || 0,
+        host: game.host
+      });
+      socket.emit('game-state', game);
+      
+    } catch (error) {
+      console.error('Error getting game state:', error);
+      socket.emit('error', { message: 'Failed to get game state' });
     }
-    
-    if (game.status !== 'waiting') {
-      socket.emit('error', { message: 'Game already in progress' });
-      return;
-    }
-    
-    const playerId = generatePlayerId();
-    const player = createPlayer(playerId, playerName, socket.id);
-    
-    game.players.push(player);
-    games.set(gameId, game);
-    players.set(socket.id, { gameId, playerId, playerName });
-    
-    // Join the game room
-    socket.join(gameId);
-    
-    // Notify all players in the game
-    socket.emit('game-joined', { gameId, playerId });
-    io.to(gameId).emit('game-state', game);
-    io.to(gameId).emit('player-joined', { playerName });
-    
-    console.log(`${playerName} joined game: ${gameId}`);
   });
 
   // Start the game
-  socket.on('start-game', () => {
-    const playerInfo = players.get(socket.id);
-    if (!playerInfo) return;
-    
-    const game = games.get(playerInfo.gameId);
-    if (!game || game.host !== playerInfo.playerId) {
-      socket.emit('error', { message: 'Only the host can start the game' });
-      return;
+  socket.on('start-game', async () => {
+    try {
+      const playerInfo = players.get(socket.id);
+      if (!playerInfo) return;
+      
+      const game = activeGameStates.get(playerInfo.gameId);
+      if (!game || game.host !== playerInfo.playerId) {
+        socket.emit('error', { message: 'Only the host can start the game' });
+        return;
+      }
+      
+      if (game.players.length < 2) {
+        socket.emit('error', { message: 'Need at least 2 players to start' });
+        return;
+      }
+      
+      game.status = 'playing';
+      game.timerActive = true;
+      activeGameStates.set(playerInfo.gameId, game);
+      
+      // Update database status
+      await GameDatabase.updateGameStatus(playerInfo.gameId, 'playing');
+      
+      io.to(playerInfo.gameId).emit('game-started');
+      io.to(playerInfo.gameId).emit('game-state', game);
+      
+      // Start the game timer
+      startGameTimer(playerInfo.gameId);
+      
+      console.log(`Game started: ${playerInfo.gameId}`);
+    } catch (error) {
+      console.error('Error starting game:', error);
+      socket.emit('error', { message: 'Failed to start game' });
     }
-    
-    if (game.players.length < 2) {
-      socket.emit('error', { message: 'Need at least 2 players to start' });
-      return;
-    }
-    
-    game.status = 'playing';
-    game.timerActive = true;
-    games.set(playerInfo.gameId, game);
-    
-    io.to(playerInfo.gameId).emit('game-started');
-    io.to(playerInfo.gameId).emit('game-state', game);
-    
-    // Start the game timer
-    startGameTimer(playerInfo.gameId);
-    
-    console.log(`Game started: ${playerInfo.gameId}`);
   });
 
   // Handle player actions
@@ -184,7 +315,7 @@ io.on('connection', (socket) => {
     const playerInfo = players.get(socket.id);
     if (!playerInfo) return;
     
-    const game = games.get(playerInfo.gameId);
+    const game = activeGameStates.get(playerInfo.gameId);
     if (!game || game.status !== 'playing') return;
     
     const { action, resource, amount, targetPlayer } = data;
@@ -249,7 +380,7 @@ io.on('connection', (socket) => {
       game.recentActions = game.recentActions.slice(0, 10); // Keep only last 10 actions
     }
     
-    games.set(playerInfo.gameId, game);
+    activeGameStates.set(playerInfo.gameId, game);
     io.to(playerInfo.gameId).emit('game-state', game);
   });
 
@@ -259,7 +390,7 @@ io.on('connection', (socket) => {
     
     const playerInfo = players.get(socket.id);
     if (playerInfo) {
-      const game = games.get(playerInfo.gameId);
+      const game = activeGameStates.get(playerInfo.gameId);
       if (game) {
         // Mark player as disconnected
         const player = game.players.find(p => p.id === playerInfo.playerId);
@@ -275,7 +406,7 @@ io.on('connection', (socket) => {
           }
         }
         
-        games.set(playerInfo.gameId, game);
+        activeGameStates.set(playerInfo.gameId, game);
         io.to(playerInfo.gameId).emit('game-state', game);
         io.to(playerInfo.gameId).emit('player-disconnected', { playerName: playerInfo.playerName });
       }
@@ -287,8 +418,8 @@ io.on('connection', (socket) => {
 
 // Game timer function
 function startGameTimer(gameId) {
-  const timer = setInterval(() => {
-    const game = games.get(gameId);
+  const timer = setInterval(async () => {
+    const game = activeGameStates.get(gameId);
     if (!game || !game.timerActive) {
       clearInterval(timer);
       return;
@@ -316,6 +447,10 @@ function startGameTimer(gameId) {
         // Game finished
         game.status = 'finished';
         game.timerActive = false;
+        
+        // Update database status
+        await GameDatabase.updateGameStatus(gameId, 'finished');
+        
         io.to(gameId).emit('game-finished', game);
       } else {
         // New round
@@ -336,14 +471,14 @@ function startGameTimer(gameId) {
       game.timeRemaining = { hours: newHours, minutes: newMinutes, seconds: newSeconds };
     }
     
-    games.set(gameId, game);
+    activeGameStates.set(gameId, game);
     io.to(gameId).emit('game-state', game);
   }, 1000);
 }
 
 // Market fluctuations
 setInterval(() => {
-  games.forEach((game, gameId) => {
+  activeGameStates.forEach((game, gameId) => {
     if (game.status === 'playing') {
       game.marketChanges = game.marketChanges.map(change => {
         const fluctuation = Math.floor(Math.random() * 10) - 5;
@@ -355,15 +490,25 @@ setInterval(() => {
         };
       });
       
-      games.set(gameId, game);
+      activeGameStates.set(gameId, game);
       io.to(gameId).emit('game-state', game);
     }
   });
 }, 5000);
 
+// Cleanup old finished games every hour
+setInterval(async () => {
+  try {
+    await GameDatabase.cleanupOldGames(24); // Remove games older than 24 hours
+  } catch (error) {
+    console.error('Error during cleanup:', error);
+  }
+}, 60 * 60 * 1000); // Every hour
+
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Access from other devices: http://YOUR_IP_ADDRESS:${PORT}`);
+  console.log('Supabase database integration enabled');
 });
 

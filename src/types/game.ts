@@ -29,6 +29,7 @@ export interface GameState {
   currentPlayer: Player;
   marketChanges: MarketChange[];
   recentActions: string[];
+  host:string[];
 }
 
 export interface Player {

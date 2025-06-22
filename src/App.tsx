@@ -5,7 +5,7 @@ import { GameLobby } from './components/GameLobby';
 import { ProfilePage } from './components/ProfilePage';
 import { ProfileCreationPage } from './components/ProfileCreationPage';
 import { GameInterface } from './components/GameInterface';
-import { PeerProvider } from './context/PeerContext';
+import { SocketProvider } from './context/SocketContext';
 
 function App() {
   const [currentPage, setCurrentPage] = useState('home');
@@ -70,23 +70,15 @@ function App() {
     }
   };
 
-  if (currentPage === 'game') {
-    return (
-      <PeerProvider>
-        {renderCurrentPage()}
-      </PeerProvider>
-    );
-  }
-
   return (
-    <PeerProvider>
+    <SocketProvider>
       <div className="min-h-screen bg-pixel-black scanlines font-pixel">
-        <Header currentPage={currentPage} onNavigate={handleNavigate} />
+        {currentPage !== 'game' && <Header currentPage={currentPage} onNavigate={handleNavigate} />}
         <main className="relative">
           {renderCurrentPage()}
         </main>
       </div>
-    </PeerProvider>
+    </SocketProvider>
   );
 }
 

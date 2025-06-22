@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { usePeer } from '../context/PeerContext';
+import { useSocket } from '../context/SocketContext';
 import { useAudio } from '../hooks/useAudio';
 
 interface PublicGame {
@@ -17,23 +17,23 @@ interface GameLobbyProps {
 }
 
 export function GameLobby({ onPlayGame }: GameLobbyProps) {
-  const { connected, createGame, joinGame, setGameInfo, gameId } = usePeer();
+  const { socket, connected, gameId, setGameInfo } = useSocket();
   const { playSound } = useAudio();
+  
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [userProfile, setUserProfile] = useState<{ name: string; wallet: string; avatar: string } | null>(null);
   const [gameName, setGameName] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
   const [createdGameId, setCreatedGameId] = useState<string | null>(null);
+  const [showGameCreated, setShowGameCreated] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
   const [joinGameId, setJoinGameId] = useState('');
   const [joinError, setJoinError] = useState('');
   const [error, setError] = useState('');
   const [publicGames, setPublicGames] = useState<PublicGame[]>([]);
   const [refreshingGames, setRefreshingGames] = useState(false);
-  const [showJoinPublicModal, setShowJoinPublicModal] = useState(false);
-  const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
-  const [selectedGameName, setSelectedGameName] = useState<string>('');
+  const [loading, setLoading] = useState(false);
 
   // Load user profile on mount
   useEffect(() => {
@@ -49,108 +49,171 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
   }, []);
 
   useEffect(() => {
+    if (!socket) return;
+
     // Load public games on mount
     loadPublicGames();
 
+    // Set up socket event listeners
+    socket.on('public-games-list', (games: PublicGame[]) => {
+      setPublicGames(games);
+      setRefreshingGames(false);
+    });
+
+    socket.on('game-created', (data: { gameId: string; playerId: string }) => {
+      console.log('Game created event received:', data);
+      setCreatedGameId(data.gameId);
+      setShowGameCreated(true);
+      setShowCreateModal(true);
+      setLoading(false);
+      setError('');
+      // Store game info in context with player name immediately
+      if (userProfile?.name) {
+        console.log('Setting game info in context:', { gameId: data.gameId, playerId: data.playerId, playerName: userProfile.name });
+        setGameInfo(data.gameId, data.playerId, userProfile.name);
+      }
+      // Don't automatically navigate to game, wait for user to click "Enter Game"
+    });
+
+    socket.on('game-joined', (data: { gameId: string; playerId: string }) => {
+      setLoading(false);
+      setError('');
+      // Store game info in context with player name
+      if (userProfile?.name) {
+        setGameInfo(data.gameId, data.playerId, userProfile.name);
+      }
+      onPlayGame();
+    });
+
+    socket.on('error', (error: { message: string }) => {
+      setError(error.message);
+      setJoinError(error.message);
+      setLoading(false);
+    });
+
     // Auto-refresh public games every 10 seconds
     const refreshInterval = setInterval(() => {
-      loadPublicGames();
+      if (connected) {
+        loadPublicGames();
+      }
     }, 10000);
-
-    // Check if we have a gameId from the context (game was created)
-    if (gameId && !createdGameId) {
-      setCreatedGameId(gameId);
-    }
 
     return () => {
       clearInterval(refreshInterval);
+      socket.off('public-games-list');
+      socket.off('game-created');
+      socket.off('game-joined');
+      socket.off('error');
     };
-  }, [gameId, createdGameId]);
+  }, [socket, connected, onPlayGame]);
 
   const loadPublicGames = () => {
-    setRefreshingGames(true);
-    // Load from localStorage
-    try {
-      const publicGamesData = JSON.parse(localStorage.getItem('publicGames') || '[]');
-      const gamesWithStatus = publicGamesData.map((game: any) => {
-        const gameState = localStorage.getItem(`game_${game.id}`);
-        if (gameState) {
-          const parsedState = JSON.parse(gameState);
-          return {
-            ...game,
-            currentPlayers: parsedState.players.length,
-            maxPlayers: 4,
-            status: parsedState.players.length >= 4 ? 'Full' : 'Open',
-            hostName: parsedState.players.find((p: any) => p.id === parsedState.host)?.name || 'Unknown'
-          };
-        }
-        return null;
-      }).filter(Boolean);
-      
-      setPublicGames(gamesWithStatus);
-    } catch (error) {
-      console.error('Failed to load public games:', error);
-      setPublicGames([]);
+    if (!socket || !connected) {
+      console.log('Socket not connected, skipping public games load');
+      return;
     }
-    setRefreshingGames(false);
+    
+    setRefreshingGames(true);
+    socket.emit('get-public-games');
   };
 
   const handleCreateGame = () => {
-    if (gameName.trim() && userProfile?.name) {
-      try {
-        createGame(gameName.trim(), userProfile.name, isPrivate);
-        // Close the modal and refresh games
-        setShowCreateModal(false);
-        setGameName('');
-        setIsPrivate(false);
-        loadPublicGames();
-        // Navigate to game immediately
-        onPlayGame();
-      } catch (error) {
-        setError('Failed to create game');
-      }
+    if (gameName.trim() && userProfile?.name && socket && connected) {
+      setLoading(true);
+      setError('');
+      
+      socket.emit('create-game', {
+        gameName: gameName.trim(),
+        playerName: userProfile.name,
+        isPrivate
+      });
+      
+      // Don't close modal - wait for game created response
+      // Modal will show game ID after creation
     }
   };
 
   const handleJoinPublicGame = (gameId: string, gameName?: string) => {
-    if (userProfile?.name) {
-      try {
-        joinGame(gameId, userProfile.name);
-        onPlayGame();
-      } catch (error: any) {
-        setError(error.message);
-      }
+    if (userProfile?.name && socket && connected) {
+      setLoading(true);
+      setError('');
+      setJoinError('');
+      
+      socket.emit('join-game', {
+        gameId,
+        playerName: userProfile.name
+      });
     }
   };
 
 
   const handleJoinById = () => {
-    if (joinGameId.trim() && userProfile?.name) {
-      try {
-        joinGame(joinGameId.trim(), userProfile.name);
-        onPlayGame();
-      } catch (error: any) {
-        setJoinError(error.message);
-      }
+    if (joinGameId.trim() && userProfile?.name && socket && connected) {
+      setLoading(true);
+      setJoinError('');
+      setError('');
+      
+      socket.emit('join-game', {
+        gameId: joinGameId.trim(),
+        playerName: userProfile.name
+      });
     }
   };
 
   const handleCopyGameId = async () => {
     if (createdGameId) {
       try {
-        await navigator.clipboard.writeText(createdGameId);
-        setCopySuccess(true);
-        setTimeout(() => setCopySuccess(false), 2000);
+        // Try modern clipboard API first
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(createdGameId);
+          setCopySuccess(true);
+          setTimeout(() => setCopySuccess(false), 2000);
+        } else {
+          // Fallback for older browsers or non-HTTPS contexts
+          const textArea = document.createElement('textarea');
+          textArea.value = createdGameId;
+          textArea.style.position = 'fixed';
+          textArea.style.top = '0';
+          textArea.style.left = '0';
+          textArea.style.width = '2em';
+          textArea.style.height = '2em';
+          textArea.style.padding = '0';
+          textArea.style.border = 'none';
+          textArea.style.outline = 'none';
+          textArea.style.boxShadow = 'none';
+          textArea.style.background = 'transparent';
+          document.body.appendChild(textArea);
+          textArea.focus();
+          textArea.select();
+          
+          try {
+            const successful = document.execCommand('copy');
+            if (successful) {
+              setCopySuccess(true);
+              setTimeout(() => setCopySuccess(false), 2000);
+            } else {
+              alert(`Game ID: ${createdGameId}\n\nPlease copy this manually.`);
+            }
+          } catch (fallbackErr) {
+            alert(`Game ID: ${createdGameId}\n\nPlease copy this manually.`);
+          }
+          
+          document.body.removeChild(textArea);
+        }
       } catch (err) {
         console.error('Failed to copy game ID:', err);
+        // Final fallback - show alert with game ID
+        alert(`Game ID: ${createdGameId}\n\nPlease copy this manually.`);
       }
     }
   };
 
   const handleCloseCreateModal = () => {
     setShowCreateModal(false);
+    setShowGameCreated(false);
     setCreatedGameId(null);
     setGameName('');
+    setIsPrivate(false);
     setCopySuccess(false);
     setError('');
   };
@@ -163,6 +226,17 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
   };
 
   const handlePlayCreatedGame = () => {
+    console.log('Entering created game...', { createdGameId, connected, gameId });
+    if (!connected) {
+      setError('Not connected to server. Please wait for connection.');
+      return;
+    }
+    if (!createdGameId) {
+      setError('Game ID not available. Please try creating the game again.');
+      return;
+    }
+    
+    console.log('Navigating to game interface with game ID:', createdGameId);
     handleCloseCreateModal();
     onPlayGame();
   };
@@ -308,10 +382,10 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
                             playSound('click');
                             handleJoinPublicGame(game.id);
                           }}
-                          disabled={game.status !== 'Open' || !connected}
+                          disabled={game.status !== 'Open' || !connected || loading}
                           className="px-4 py-2 bg-pixel-primary hover:bg-pixel-success text-pixel-black font-bold text-pixel-sm pixel-btn border-pixel-black uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          {game.status === 'Open' ? 'Join' : 'Full'}
+                          {loading ? 'Joining...' : (game.status === 'Open' ? 'Join' : 'Full')}
                         </button>
                       </td>
                     </tr>
@@ -339,7 +413,7 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
               </div>
             )}
             
-            {!createdGameId ? (
+            {!showGameCreated ? (
               <>
                 {/* Show player info */}
                 <div className="bg-pixel-gray pixel-panel border-pixel-light-gray p-3 mb-4">
@@ -384,10 +458,10 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
                       playSound('click');
                       handleCreateGame();
                     }}
-                    disabled={!gameName.trim() || !userProfile?.name}
+                    disabled={!gameName.trim() || !userProfile?.name || !connected || loading}
                     className="flex-1 px-6 py-3 bg-pixel-primary hover:bg-pixel-success text-pixel-black font-bold text-pixel-base pixel-btn border-pixel-black uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Create
+                    {loading ? 'Creating...' : 'Create'}
                   </button>
                   <button
                     onClick={() => {
@@ -506,14 +580,14 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
                   playSound('click');
                   handleJoinById();
                 }}
-                disabled={!joinGameId.trim() || !userProfile?.name}
+                disabled={!joinGameId.trim() || !userProfile?.name || !connected || loading}
                 className={`flex-1 px-6 py-3 font-bold text-pixel-base pixel-btn uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed ${
                   joinError
                     ? 'bg-pixel-black hover:bg-pixel-dark-gray text-pixel-error border-pixel-error'
                     : 'bg-pixel-primary hover:bg-pixel-success text-pixel-black border-pixel-black'
                 }`}
               >
-                Join Game
+                {loading ? 'Joining...' : 'Join Game'}
               </button>
               <button
                 onClick={() => {

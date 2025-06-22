@@ -6,7 +6,7 @@ import { AssetsList } from './AssetsList';
 import { PlayerStats } from './PlayerStats';
 import { ActionPanel } from './ActionPanel';
 import { RecentActions } from './RecentActions';
-import { usePeer } from '../context/PeerContext';
+import { useSocket } from '../context/SocketContext';
 import { useAudio } from '../hooks/useAudio';
 
 interface GameInterfaceProps {
@@ -14,8 +14,53 @@ interface GameInterfaceProps {
 }
 
 export function GameInterface({ onExitGame }: GameInterfaceProps) {
-  const { gameId, playerId, playerName, gameState, isHost, startGame, sendAction, exitGame } = usePeer();
+  const { socket, connected, gameId, playerId, playerName, clearGameInfo } = useSocket();
+  
+  // Fallback to localStorage if gameId is not available from context
+  const [effectiveGameId, setEffectiveGameId] = useState<string | null>(null);
+  const [effectivePlayerId, setEffectivePlayerId] = useState<string | null>(null);
+  const [effectivePlayerName, setEffectivePlayerName] = useState<string | null>(null);
+  const [contextLoaded, setContextLoaded] = useState(false);
+  
+  // Initialize effective values from context or localStorage
+  useEffect(() => {
+    console.log('GameInterface: Context values update:', { gameId, playerId, playerName });
+    
+    // If context has values, use them
+    if (gameId && playerId && playerName) {
+      console.log('GameInterface: Using context values');
+      setEffectiveGameId(gameId);
+      setEffectivePlayerId(playerId);
+      setEffectivePlayerName(playerName);
+      setContextLoaded(true);
+      return;
+    }
+    
+    // If context doesn't have values, try localStorage
+    try {
+      const storedGameInfo = localStorage.getItem('currentGameInfo');
+      if (storedGameInfo) {
+        const { gameId: storedGameId, playerId: storedPlayerId, playerName: storedPlayerName } = JSON.parse(storedGameInfo);
+        console.log('GameInterface: Using stored game info:', { storedGameId, storedPlayerId, storedPlayerName });
+        
+        if (storedGameId && storedPlayerId && storedPlayerName) {
+          setEffectiveGameId(storedGameId);
+          setEffectivePlayerId(storedPlayerId);
+          setEffectivePlayerName(storedPlayerName);
+          setContextLoaded(true);
+          return;
+        }
+      }
+    } catch (error) {
+      console.error('GameInterface: Error loading stored game info:', error);
+    }
+    
+    // Mark as loaded even if no values found to avoid infinite loading
+    setContextLoaded(true);
+  }, [gameId, playerId, playerName]);
   const { playSound } = useAudio();
+  const [gameState, setGameState] = useState<GameState>(null);
+  const [isHost, setIsHost] = useState(false);
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [selectedAction, setSelectedAction] = useState<Action['type']>('buy');
   const [selectedResource, setSelectedResource] = useState<'gold' | 'water' | 'oil'>('gold');
@@ -29,14 +74,81 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
   const [showWinnerModal, setShowWinnerModal] = useState(false);
   const [gameFinished, setGameFinished] = useState(false);
 
+  // Socket event listeners
+  useEffect(() => {
+    console.log('GameInterface useEffect - socket:', !!socket, 'effectiveGameId:', effectiveGameId, 'connected:', connected, 'contextLoaded:', contextLoaded);
+    
+    if (!socket || !contextLoaded) {
+      console.log('GameInterface: Missing socket or context not loaded yet');
+      return;
+    }
+    
+    if (!effectiveGameId) {
+      console.log('GameInterface: No effectiveGameId available, cannot request game state');
+      return;
+    }
+
+    // Wait for socket to be connected before requesting game state
+    if (!connected) {
+      console.log('GameInterface: Socket not connected yet, waiting...');
+      return;
+    }
+
+    console.log('GameInterface: Requesting game state for effectiveGameId:', effectiveGameId);
+    
+    // Request current game state when component mounts and socket is connected
+    socket.emit('get-game-state', { gameId: effectiveGameId });
+
+    socket.on('game-state', (state: any) => {
+      console.log('GameInterface: Received game state:', state);
+      if (state) {
+        setGameState(state);
+        setIsHost(state.host === effectivePlayerId);
+        console.log('GameInterface: Game state set successfully, host:', state.host === playerId);
+      } else {
+        console.error('GameInterface: Received null/undefined game state');
+      }
+    });
+
+    socket.on('game-started', () => {
+      playSound('switch');
+    });
+
+    socket.on('game-finished', (finalState: any) => {
+      setGameState(finalState);
+      playSound('action');
+    });
+
+    socket.on('player-joined', (data: { playerName: string }) => {
+      playSound('click');
+    });
+
+    socket.on('player-disconnected', (data: { playerName: string }) => {
+      console.log(`${data.playerName} disconnected`);
+    });
+
+    socket.on('error', (error: { message: string }) => {
+      console.error('Game error:', error.message);
+    });
+
+    return () => {
+      socket.off('game-state');
+      socket.off('game-started');
+      socket.off('game-finished');
+      socket.off('player-joined');
+      socket.off('player-disconnected');
+      socket.off('error');
+    };
+    }, [socket, effectiveGameId, effectivePlayerId, playSound, connected, contextLoaded]);
+
   // Separate effect for basic player and game state updates
   useEffect(() => {
     if (gameState) {
-      const player = gameState.players.find((p: any) => p.id === playerId);
+      const player = gameState.players.find((p: any) => p.id === effectivePlayerId);
       setCurrentPlayer(player || null);
       setGameStarted(gameState.status === 'playing');
     }
-  }, [gameState, playerId]);
+  }, [gameState, effectivePlayerId]);
   
   // Get actionsByRound from game state - combine actionHistory with current round actions
   const actionsByRound = React.useMemo(() => {
@@ -60,7 +172,7 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
       // Check for new players joining (only if we had a previous count)
       if (previousPlayerCount > 0 && currentPlayerCount > previousPlayerCount) {
         const newPlayer = gameState.players[currentPlayerCount - 1];
-        if (newPlayer.id !== playerId) {
+        if (newPlayer.id !== effectivePlayerId) {
           addNotification(`🎮 ${newPlayer.name} joined the game!`);
           playSound('switch');
         }
@@ -71,7 +183,7 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
         setPreviousPlayerCount(currentPlayerCount);
       }
     }
-  }, [gameState?.players?.length, playerId]);
+  }, [gameState?.players?.length, effectivePlayerId]);
   
   // Separate effect for action changes to prevent sound spam
   useEffect(() => {
@@ -86,7 +198,7 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
         // If there's a new action at the top of the list
         if (latestAction && latestAction !== wasLatestAction) {
           // Check if this action was performed by the current player
-          const isMyAction = latestAction.includes(playerName || '');
+          const isMyAction = latestAction.includes(effectivePlayerName || '');
           
           if (!isMyAction) {
             // Show notification for other players' actions (no sound)
@@ -105,7 +217,7 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
         setPreviousRecentActions(currentActions);
       }
     }
-  }, [gameState?.recentActions, playerName, gameState?.status]);
+  }, [gameState?.recentActions, effectivePlayerName, gameState?.status]);
   
   // Separate effect for game finish status to prevent infinite loops
   useEffect(() => {
@@ -143,18 +255,15 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
   };
 
   const handleStartGame = () => {
-    if (isHost) {
-      try {
-        startGame();
-        addNotification('Game started!');
-      } catch (error: any) {
-        addNotification(`Error: ${error.message}`);
-      }
+    if (isHost && socket) {
+      socket.emit('start-game');
+      addNotification('Starting game...');
     }
   };
 
   const handleExitGame = () => {
-    exitGame();
+    // Clear game info from context
+    clearGameInfo();
     onExitGame();
   };
 
@@ -168,22 +277,62 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
       targetPlayer: selectedAction === 'sabotage' ? targetPlayer : undefined
     };
 
-    sendAction(actionData);
+    if (socket) {
+      socket.emit('player-action', actionData);
+    }
 
     // Reset form
     setAmount(1);
     setTargetPlayer('');
   };
 
-  // Loading state
-  if (!gameState) {
+  // Loading state - show different messages based on what's missing
+  if (!contextLoaded || !connected || !gameState) {
+    let loadingMessage = 'Loading Game...';
+    let showRetryButton = false;
+    
+    if (!contextLoaded) {
+      loadingMessage = 'Initializing...';
+    } else if (!connected) {
+      loadingMessage = 'Connecting to server...';
+    } else if (!effectiveGameId) {
+      loadingMessage = 'No game selected...';
+      showRetryButton = true;
+    } else if (!gameState) {
+      loadingMessage = 'Loading Game...';
+      showRetryButton = true;
+    }
+    
     return (
       <div className="min-h-screen bg-pixel-black scanlines p-6 font-pixel flex items-center justify-center">
         <div className="bg-pixel-dark-gray pixel-panel border-pixel-gray p-8">
           <h2 className="text-pixel-xl font-bold text-pixel-primary text-center mb-4">
-            Loading Game...
+            {loadingMessage}
           </h2>
-          <p className="text-pixel-base-gray text-center">Game ID: {gameId}</p>
+          <p className="text-pixel-base-gray text-center">Game ID: {effectiveGameId || 'Unknown'}</p>
+          {showRetryButton && connected && effectiveGameId && (
+            <div className="mt-4 text-center">
+              <button
+                onClick={() => {
+                  console.log('Retrying game state request...');
+                  if (socket && effectiveGameId) {
+                    socket.emit('get-game-state', { gameId: effectiveGameId });
+                  }
+                }}
+                className="px-4 py-2 bg-pixel-primary hover:bg-pixel-success text-pixel-black font-bold text-pixel-sm pixel-btn border-pixel-black uppercase tracking-wider mr-4"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+          <div className="mt-6 text-center">
+            <button
+              onClick={handleExitGame}
+              className="px-6 py-3 bg-pixel-gray hover:bg-pixel-light-gray text-pixel-primary font-bold text-pixel-base pixel-btn border-pixel-gray uppercase tracking-wider"
+            >
+              Exit to Lobby
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -221,7 +370,7 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
                 </div>
               </div>
               <div className="space-y-2 text-pixel-base-gray">
-                <p><span className="text-pixel-primary">Game ID:</span> {gameId}</p>
+                <p><span className="text-pixel-primary">Game ID:</span> {effectiveGameId}</p>
                 <p><span className="text-pixel-primary">Host:</span> {isHost ? 'You' : gameState.players.find((p: any) => p.id === gameState.host)?.name || 'Unknown'}</p>
                 <p><span className="text-pixel-primary">Players:</span> {gameState.players.length}/4</p>
                 <p><span className="text-pixel-primary">Status:</span> Waiting for players</p>
@@ -238,7 +387,7 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
               <button
                 onClick={() => {
                   playSound('click');
-                  navigator.clipboard.writeText(gameId || '');
+                  navigator.clipboard.writeText(effectiveGameId || '');
                 }}
                 className="mt-4 w-full px-4 py-2 bg-pixel-accent hover:bg-pixel-success text-pixel-black font-bold text-pixel-sm pixel-btn border-pixel-black uppercase tracking-wider"
               >
@@ -255,7 +404,7 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
                 <div key={player.id} className="bg-pixel-gray pixel-panel border-pixel-light-gray p-4">
                   <div className="flex items-center justify-between">
                     <span className="text-pixel-primary font-bold">
-                      {player.name} {player.id === playerId && '(You)'}
+                      {player.name} {player.id === effectivePlayerId && '(You)'}
                     </span>
                     <div className="flex items-center space-x-2">
                       {player.id === gameState.host && (
@@ -407,7 +556,7 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
                 <div className="text-pixel-lg font-bold text-pixel-base-gray">
                   Final Score: {gameState.winner.finalScore} Points
                 </div>
-                {gameState.winner.id === playerId && (
+                {gameState.winner.id === effectivePlayerId && (
                   <div className="text-pixel-lg font-bold text-pixel-warning mt-2">
                     🎉 Congratulations! 🎉
                   </div>
