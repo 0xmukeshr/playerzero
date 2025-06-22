@@ -669,6 +669,7 @@ export const PeerProvider: React.FC<PeerProviderProps> = ({ children }) => {
     
     const handleCustomGameUpdate = (e: CustomEvent) => {
       if (!gameId || e.detail.gameId !== gameId) return;
+      //
       
       // Only sync if the state is actually different
       const currentStateStr = JSON.stringify(gameState);
