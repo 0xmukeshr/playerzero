@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useSocket } from '../context/SocketContext';
+import { usePeer } from '../context/PeerContext';
 import { useAudio } from '../hooks/useAudio';
 
 interface PublicGame {
@@ -17,7 +17,7 @@ interface GameLobbyProps {
 }
 
 export function GameLobby({ onPlayGame }: GameLobbyProps) {
-  const { socket, connected, setGameInfo } = useSocket();
+  const { connected, createGame, joinGame, setGameInfo, gameId } = usePeer();
   const { playSound } = useAudio();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
@@ -37,8 +37,6 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
   const [joinPublicPlayerName, setJoinPublicPlayerName] = useState('');
 
   useEffect(() => {
-    if (!socket) return;
-
     // Load public games on mount
     loadPublicGames();
 
@@ -47,67 +45,70 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
       loadPublicGames();
     }, 10000);
 
-    socket.on('game-created', (data) => {
-      setCreatedGameId(data.gameId);
-      setGameInfo(data.gameId, data.playerId, playerName);
-      setGameName('');
-      setPlayerName('');
-      setIsPrivate(false);
-      // Refresh public games if it was a public game
-      if (!isPrivate) {
-        loadPublicGames();
-      }
-    });
-
-    socket.on('game-joined', (data) => {
-      setGameInfo(data.gameId, data.playerId, playerName);
-      onPlayGame();
-    });
-
-    socket.on('public-games-list', (games) => {
-      setPublicGames(games);
-      setRefreshingGames(false);
-    });
-
-    socket.on('error', (data) => {
-      setError(data.message);
-      if (showJoinModal) {
-        setJoinError(data.message);
-      }
-    });
+    // Check if we have a gameId from the context (game was created)
+    if (gameId && !createdGameId) {
+      setCreatedGameId(gameId);
+    }
 
     return () => {
       clearInterval(refreshInterval);
-      socket.off('game-created');
-      socket.off('game-joined');
-      socket.off('public-games-list');
-      socket.off('error');
     };
-  }, [socket, onPlayGame, showJoinModal, isPrivate]);
+  }, [gameId, createdGameId]);
 
   const loadPublicGames = () => {
-    if (socket) {
-      setRefreshingGames(true);
-      socket.emit('get-public-games');
+    setRefreshingGames(true);
+    // Load from localStorage
+    try {
+      const publicGamesData = JSON.parse(localStorage.getItem('publicGames') || '[]');
+      const gamesWithStatus = publicGamesData.map((game: any) => {
+        const gameState = localStorage.getItem(`game_${game.id}`);
+        if (gameState) {
+          const parsedState = JSON.parse(gameState);
+          return {
+            ...game,
+            currentPlayers: parsedState.players.length,
+            maxPlayers: 4,
+            status: parsedState.players.length >= 4 ? 'Full' : 'Open',
+            hostName: parsedState.players.find((p: any) => p.id === parsedState.host)?.name || 'Unknown'
+          };
+        }
+        return null;
+      }).filter(Boolean);
+      
+      setPublicGames(gamesWithStatus);
+    } catch (error) {
+      console.error('Failed to load public games:', error);
+      setPublicGames([]);
     }
+    setRefreshingGames(false);
   };
 
   const handleCreateGame = () => {
-    if (gameName.trim() && playerName.trim() && socket) {
-      socket.emit('create-game', {
-        gameName: gameName.trim(),
-        playerName: playerName.trim(),
-        isPrivate: isPrivate
-      });
+    if (gameName.trim() && playerName.trim()) {
+      try {
+        createGame(gameName.trim(), playerName.trim(), isPrivate);
+        // Close the modal and refresh games
+        setShowCreateModal(false);
+        setGameName('');
+        setPlayerName('');
+        setIsPrivate(false);
+        loadPublicGames();
+        // Navigate to game immediately
+        onPlayGame();
+      } catch (error) {
+        setError('Failed to create game');
+      }
     }
   };
 
   const handleJoinPublicGame = (gameId: string, gameName?: string) => {
-    if (playerName.trim() && socket) {
-      socket.emit('join-game', {
-        gameId: gameId,
-        playerName: playerName.trim()
-      });
+    if (playerName.trim()) {
+      try {
+        joinGame(gameId, playerName.trim());
+        onPlayGame();
+      } catch (error: any) {
+        setError(error.message);
+      }
     } else {
       // Show custom modal for player name input
       const game = publicGames.find(g => g.id === gameId);
@@ -118,18 +119,20 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
   };
 
   const handleConfirmJoinPublicGame = () => {
-    if (joinPublicPlayerName.trim() && selectedGameId && socket) {
-      setPlayerName(joinPublicPlayerName.trim());
-      socket.emit('join-game', {
-        gameId: selectedGameId,
-        playerName: joinPublicPlayerName.trim()
-      });
-      
-      // Close modal and reset state
-      setShowJoinPublicModal(false);
-      setSelectedGameId(null);
-      setSelectedGameName('');
-      setJoinPublicPlayerName('');
+    if (joinPublicPlayerName.trim() && selectedGameId) {
+      try {
+        setPlayerName(joinPublicPlayerName.trim());
+        joinGame(selectedGameId, joinPublicPlayerName.trim());
+        
+        // Close modal and reset state
+        setShowJoinPublicModal(false);
+        setSelectedGameId(null);
+        setSelectedGameName('');
+        setJoinPublicPlayerName('');
+        onPlayGame();
+      } catch (error: any) {
+        setError(error.message);
+      }
     }
   };
 
@@ -141,11 +144,13 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
   };
 
   const handleJoinById = () => {
-    if (joinGameId.trim() && playerName.trim() && socket) {
-      socket.emit('join-game', {
-        gameId: joinGameId.trim(),
-        playerName: playerName.trim()
-      });
+    if (joinGameId.trim() && playerName.trim()) {
+      try {
+        joinGame(joinGameId.trim(), playerName.trim());
+        onPlayGame();
+      } catch (error: any) {
+        setJoinError(error.message);
+      }
     }
   };
 

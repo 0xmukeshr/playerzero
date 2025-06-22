@@ -9,8 +9,9 @@ interface PlayerStatsProps {
 export function PlayerStats({ players }: PlayerStatsProps) {
   // Sort players by total points (tokens + assets * market prices)
   const sortedPlayers = [...players].sort((a, b) => {
-    const aPoints = a.tokens + (a.assets.gold * 10) + (a.assets.water * 15) + (a.assets.oil * 25);
-    const bPoints = b.tokens + (b.assets.gold * 10) + (b.assets.water * 15) + (b.assets.oil * 25);
+    // Use finalScore if available (game finished), otherwise calculate live score
+    const aPoints = a.finalScore || (a.tokens + (a.assets.gold * 10) + (a.assets.water * 15) + (a.assets.oil * 25));
+    const bPoints = b.finalScore || (b.tokens + (b.assets.gold * 10) + (b.assets.water * 15) + (b.assets.oil * 25));
     return bPoints - aPoints;
   });
 

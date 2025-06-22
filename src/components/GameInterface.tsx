@@ -6,7 +6,7 @@ import { AssetsList } from './AssetsList';
 import { PlayerStats } from './PlayerStats';
 import { ActionPanel } from './ActionPanel';
 import { RecentActions } from './RecentActions';
-import { useSocket } from '../context/SocketContext';
+import { usePeer } from '../context/PeerContext';
 import { useAudio } from '../hooks/useAudio';
 
 interface GameInterfaceProps {
@@ -14,76 +14,94 @@ interface GameInterfaceProps {
 }
 
 export function GameInterface({ onExitGame }: GameInterfaceProps) {
-  const { socket, gameId, playerId, playerName, clearGameInfo } = useSocket();
+  const { gameId, playerId, playerName, gameState, isHost, startGame, sendAction, exitGame } = usePeer();
   const { playSound } = useAudio();
-  const [gameState, setGameState] = useState<any>(null);
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [selectedAction, setSelectedAction] = useState<Action['type']>('buy');
   const [selectedResource, setSelectedResource] = useState<'gold' | 'water' | 'oil'>('gold');
   const [amount, setAmount] = useState<number>(1);
   const [targetPlayer, setTargetPlayer] = useState<string>('');
-  const [isHost, setIsHost] = useState(false);
   const [gameStarted, setGameStarted] = useState(false);
   const [notifications, setNotifications] = useState<string[]>([]);
   const [actionsByRound, setActionsByRound] = useState<{ [round: number]: string[] }>({});
+  const [previousPlayerCount, setPreviousPlayerCount] = useState(0);
+  const [previousRecentActions, setPreviousRecentActions] = useState<string[]>([]);
+  const [showWinnerModal, setShowWinnerModal] = useState(false);
+  const [gameFinished, setGameFinished] = useState(false);
 
   useEffect(() => {
-    if (!socket) return;
-
-    socket.on('game-state', (data) => {
-      setGameState(data);
-      const player = data.players.find((p: any) => p.id === playerId);
+    if (gameState) {
+      const player = gameState.players.find((p: any) => p.id === playerId);
       setCurrentPlayer(player || null);
-      setIsHost(data.host === playerId);
-      setGameStarted(data.status === 'playing');
+      setGameStarted(gameState.status === 'playing');
+      
+      // Check for new players joining (only if we had a previous count)
+      if (previousPlayerCount > 0 && gameState.players.length > previousPlayerCount) {
+        const newPlayer = gameState.players[gameState.players.length - 1];
+        if (newPlayer.id !== playerId) {
+          addNotification(`🎮 ${newPlayer.name} joined the game!`);
+          playSound('switch');
+        }
+      }
+      
+      // Update previous player count
+      setPreviousPlayerCount(gameState.players.length);
+      
+      // Check for new actions (only if we had previous actions)
+      if (previousRecentActions.length > 0 && gameState.recentActions && gameState.recentActions.length > 0) {
+        const latestAction = gameState.recentActions[0];
+        const wasLatestAction = previousRecentActions[0];
+        
+        // If there's a new action at the top of the list
+        if (latestAction && latestAction !== wasLatestAction) {
+          // Check if this action was performed by the current player
+          const isMyAction = latestAction.includes(playerName || '');
+          
+          if (!isMyAction) {
+            // Show notification for other players' actions
+            addNotification(`⚡ ${latestAction}`);
+            playSound('click');
+          }
+        }
+      }
+      
+      // Update previous recent actions
+      setPreviousRecentActions(gameState.recentActions || []);
       
       // Update actions by round
-      if (data.recentActions && data.currentRound) {
+      if (gameState.recentActions && gameState.currentRound) {
         setActionsByRound(prev => ({
           ...prev,
-          [data.currentRound]: data.recentActions
+          [gameState.currentRound]: gameState.recentActions
         }));
       }
-    });
-
-    socket.on('game-started', () => {
-      setGameStarted(true);
-      addNotification('Game has started!');
-    });
-
-    socket.on('game-finished', (data) => {
-      setGameStarted(false);
-      addNotification('Game finished!');
-      // Calculate winner
-      if (data && data.players) {
-        const winner = data.players.reduce((prev: any, current: any) => 
-          (prev.tokens + prev.totalAssets * 10) > (current.tokens + current.totalAssets * 10) ? prev : current
-        );
-        addNotification(`Winner: ${winner.name}!`);
+      
+      // Check if game finished
+      if (gameState.status === 'finished' && !gameFinished) {
+        setGameStarted(false);
+        setGameFinished(true);
+        setShowWinnerModal(true);
+        
+        // Play victory sound
+        playSound('switch');
+        
+        addNotification('🏁 Game finished!');
+        
+        // Show winner from game state (calculated by host)
+        if (gameState.winner) {
+          addNotification(`🏆 Winner: ${gameState.winner.name} (${gameState.winner.finalScore} points)!`);
+        }
       }
-    });
-
-    socket.on('player-joined', (data) => {
-      addNotification(`${data.playerName} joined the game`);
-    });
-
-    socket.on('player-disconnected', (data) => {
-      addNotification(`${data.playerName} disconnected`);
-    });
-
-    socket.on('error', (data) => {
-      addNotification(`Error: ${data.message}`);
-    });
-
-    return () => {
-      socket.off('game-state');
-      socket.off('game-started');
-      socket.off('game-finished');
-      socket.off('player-joined');
-      socket.off('player-disconnected');
-      socket.off('error');
-    };
-  }, [socket, playerId]);
+      
+      // Check if game returned to waiting after being finished
+      if (gameState.status === 'waiting' && gameFinished) {
+        setGameFinished(false);
+        setShowWinnerModal(false);
+        setGameStarted(false);
+        addNotification('🔄 Ready for rematch!');
+      }
+    }
+  }, [gameState, playerId, playerName, playSound, previousPlayerCount, previousRecentActions]);
 
   const addNotification = (message: string) => {
     setNotifications(prev => [message, ...prev.slice(0, 4)]);
@@ -93,18 +111,23 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
   };
 
   const handleStartGame = () => {
-    if (socket && isHost) {
-      socket.emit('start-game');
+    if (isHost) {
+      try {
+        startGame();
+        addNotification('Game started!');
+      } catch (error: any) {
+        addNotification(`Error: ${error.message}`);
+      }
     }
   };
 
   const handleExitGame = () => {
-    clearGameInfo();
+    exitGame();
     onExitGame();
   };
 
   const handleAction = () => {
-    if (!socket || !currentPlayer || amount <= 0) return;
+    if (!currentPlayer || amount <= 0) return;
 
     const actionData = {
       action: selectedAction,
@@ -113,7 +136,7 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
       targetPlayer: selectedAction === 'sabotage' ? targetPlayer : undefined
     };
 
-    socket.emit('player-action', actionData);
+    sendAction(actionData);
 
     // Reset form
     setAmount(1);
@@ -158,7 +181,13 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
           {/* Game Info */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div className="bg-pixel-dark-gray pixel-panel border-pixel-gray p-6">
-              <h3 className="text-pixel-lg font-bold text-pixel-primary mb-4">Game Info</h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-pixel-lg font-bold text-pixel-primary">Game Info</h3>
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-pixel-success pixel-notification border-pixel-success animate-pulse" title="Live Sync Active"></div>
+                  <span className="text-pixel-xs text-pixel-success font-bold">LIVE</span>
+                </div>
+              </div>
               <div className="space-y-2 text-pixel-base-gray">
                 <p><span className="text-pixel-primary">Game ID:</span> {gameId}</p>
                 <p><span className="text-pixel-primary">Host:</span> {isHost ? 'You' : gameState.players.find((p: any) => p.id === gameState.host)?.name || 'Unknown'}</p>
@@ -309,6 +338,74 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
             />
           </div>
         </div>
+
+        {/* Notifications */}
+        {notifications.length > 0 && (
+          <div className="fixed top-4 right-4 space-y-2 z-40">
+            {notifications.map((notification, index) => (
+              <div key={index} className="bg-pixel-accent text-pixel-black p-3 pixel-panel border-pixel-black">
+                <p className="font-bold text-pixel-sm">{notification}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Winner Modal - Simple Center Popup */}
+        {showWinnerModal && gameState?.status === 'finished' && gameState?.winner && (
+          <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-90 z-50">
+            <div className="bg-pixel-primary p-12 pixel-panel border-pixel-black max-w-lg w-full mx-4 text-center">
+              {/* Winner Crown Animation */}
+              <div className="text-8xl mb-6 animate-bounce">
+                👑
+              </div>
+              
+              {/* Game Finished */}
+              <h2 className="text-pixel-3xl font-bold text-pixel-black mb-4 uppercase tracking-wider">
+                Game Finished!
+              </h2>
+              
+              {/* Winner Announcement */}
+              <div className="bg-pixel-black p-6 pixel-panel border-pixel-black mb-6">
+                <h3 className="text-pixel-2xl font-bold text-pixel-primary mb-2 uppercase tracking-wider animate-pulse">
+                  🏆 Winner
+                </h3>
+                <div className="text-pixel-3xl font-bold text-pixel-success mb-2">
+                  {gameState.winner.name}
+                </div>
+                <div className="text-pixel-lg font-bold text-pixel-base-gray">
+                  Final Score: {gameState.winner.finalScore} Points
+                </div>
+                {gameState.winner.id === playerId && (
+                  <div className="text-pixel-lg font-bold text-pixel-warning mt-2">
+                    🎉 Congratulations! 🎉
+                  </div>
+                )}
+              </div>
+              
+              {/* Action Buttons */}
+              <div className="flex space-x-4">
+                <button
+                  onClick={() => {
+                    playSound('click');
+                    setShowWinnerModal(false);
+                  }}
+                  className="flex-1 px-6 py-3 bg-pixel-success hover:bg-pixel-accent text-pixel-black font-bold text-pixel-base pixel-btn border-pixel-black uppercase tracking-wider"
+                >
+                  Continue
+                </button>
+                <button
+                  onClick={() => {
+                    playSound('click');
+                    handleExitGame();
+                  }}
+                  className="flex-1 px-6 py-3 bg-pixel-error hover:bg-pixel-warning text-pixel-black font-bold text-pixel-base pixel-btn border-pixel-black uppercase tracking-wider"
+                >
+                  Exit Game
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

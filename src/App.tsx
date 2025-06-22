@@ -4,7 +4,7 @@ import { HomePage } from './components/HomePage';
 import { GameLobby } from './components/GameLobby';
 import { ProfilePage } from './components/ProfilePage';
 import { GameInterface } from './components/GameInterface';
-import { SocketProvider } from './context/SocketContext';
+import { PeerProvider } from './context/PeerContext';
 
 function App() {
   const [currentPage, setCurrentPage] = useState('home');
@@ -44,21 +44,21 @@ function App() {
 
   if (currentPage === 'game') {
     return (
-      <SocketProvider>
+      <PeerProvider>
         {renderCurrentPage()}
-      </SocketProvider>
+      </PeerProvider>
     );
   }
 
   return (
-    <SocketProvider>
+    <PeerProvider>
       <div className="min-h-screen bg-pixel-black scanlines font-pixel">
         <Header currentPage={currentPage} onNavigate={handleNavigate} />
         <main className="relative">
           {renderCurrentPage()}
         </main>
       </div>
-    </SocketProvider>
+    </PeerProvider>
   );
 }
 

@@ -29,7 +29,13 @@ export function RecentActions({ actions, currentRound, maxRounds, actionsByRound
   return (
     <div className="bg-pixel-dark-gray pixel-panel border-pixel-gray overflow-hidden">
       <div className="px-3 py-2 border-b-2 border-pixel-gray flex items-center justify-between">
-        <h3 className="text-pixel-sm font-bold text-pixel-primary uppercase tracking-wider">Recent Actions</h3>
+        <div className="flex items-center space-x-2">
+          <h3 className="text-pixel-sm font-bold text-pixel-primary uppercase tracking-wider">Recent Actions</h3>
+          <div className="flex items-center space-x-1">
+            <div className="w-1.5 h-1.5 bg-pixel-success animate-pulse pixel-notification border-pixel-success" title="Real-time updates"></div>
+            <span className="text-pixel-xs text-pixel-success font-bold">LIVE</span>
+          </div>
+        </div>
         <div className="text-pixel-xs text-pixel-base-gray font-bold">
           Round {currentRound}/{maxRounds}
         </div>
