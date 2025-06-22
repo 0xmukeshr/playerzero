@@ -156,7 +156,7 @@ export function ActionPanel({
           <div className="text-pixel-xs text-pixel-primary font-bold uppercase">
             {selectedAction} Action
           </div>
-          <div className="text-pixel-xs text-pixel-light-gray">
+          <div className="text-pixel-xs text-pixel-base-gray">
             {actions.find(a => a.type === selectedAction)?.description}
           </div>
           {selectedAction === 'sabotage' && (
@@ -324,7 +324,7 @@ export function ActionPanel({
         <div>
           <label className="block text-pixel-xs font-bold text-pixel-primary mb-2 uppercase">Select Target</label>
           <div className="grid grid-cols-2 gap-1 mb-2">
-            {players.map((player) => {
+            {players.filter(player => player.id !== currentPlayer.id).map((player) => {
               const resourceAmount = player.assets[selectedResource];
               return (
                 <button

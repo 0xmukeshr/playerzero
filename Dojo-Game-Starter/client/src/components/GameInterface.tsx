@@ -73,6 +73,7 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
   const [previousRecentActions, setPreviousRecentActions] = useState<string[]>([]);
   const [showWinnerModal, setShowWinnerModal] = useState(false);
   const [gameFinished, setGameFinished] = useState(false);
+  const [isLastThreeSeconds, setIsLastThreeSeconds] = useState(false);
 
   // Socket event listeners
   useEffect(() => {
@@ -131,6 +132,17 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
       console.error('Game error:', error.message);
     });
 
+    socket.on('game-closed', (data: { reason: string }) => {
+      console.log('Game closed by server:', data.reason);
+      addNotification(`🚪 Game closed: ${data.reason}`);
+      
+      // Auto-exit to lobby after a short delay
+      setTimeout(() => {
+        clearGameInfo();
+        onExitGame();
+      }, 3000);
+    });
+
     return () => {
       socket.off('game-state');
       socket.off('game-started');
@@ -138,6 +150,7 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
       socket.off('player-joined');
       socket.off('player-disconnected');
       socket.off('error');
+      socket.off('game-closed');
     };
     }, [socket, effectiveGameId, effectivePlayerId, playSound, connected, contextLoaded]);
 
@@ -247,6 +260,20 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
     }
   }, [gameState?.status, gameState?.winner?.name, gameState?.winner?.finalScore, gameFinished]);
 
+  // Effect to handle last 3 seconds blinking
+  useEffect(() => {
+    if (gameState?.timeRemaining) {
+      const totalSeconds = gameState.timeRemaining.minutes * 60 + gameState.timeRemaining.seconds;
+      
+      // Check if we're in the last 3 seconds
+      if (totalSeconds <= 3 && totalSeconds > 0 && gameState.status === 'playing') {
+        setIsLastThreeSeconds(true);
+      } else {
+        setIsLastThreeSeconds(false);
+      }
+    }
+  }, [gameState?.timeRemaining?.minutes, gameState?.timeRemaining?.seconds, gameState?.status]);
+
   const addNotification = (message: string) => {
     setNotifications(prev => [message, ...prev.slice(0, 4)]);
     setTimeout(() => {
@@ -262,6 +289,14 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
   };
 
   const handleExitGame = () => {
+    // Emit exit-game event to server
+    if (socket && effectiveGameId && effectivePlayerId) {
+      socket.emit('exit-game', {
+        gameId: effectiveGameId,
+        playerId: effectivePlayerId
+      });
+    }
+    
     // Clear game info from context
     clearGameInfo();
     onExitGame();
@@ -462,7 +497,11 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
   }
 
   return (
-    <div className="min-h-screen bg-pixel-black scanlines p-6 font-pixel">
+    <div className={`min-h-screen scanlines p-6 font-pixel transition-colors duration-300 ${
+      isLastThreeSeconds 
+        ? 'bg-red-900 bg-opacity-50 animate-pulse' 
+        : 'bg-pixel-black'
+    }`}>
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-3">

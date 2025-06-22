@@ -25,6 +25,8 @@ app.use(express.json());
 // Database stores persistent data, memory stores real-time state
 const activeGameStates = new Map();
 const players = new Map(); // socketId -> playerInfo
+const gameTimers = new Map(); // gameId -> timer objects
+const inactivityTimers = new Map(); // gameId -> inactivity timer
 
 // Helper function to generate game ID
 function generateGameId() {
@@ -310,6 +312,56 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Handle player exit
+  socket.on('exit-game', async (data) => {
+    try {
+      const playerInfo = players.get(socket.id);
+      if (!playerInfo) return;
+      
+      const game = activeGameStates.get(playerInfo.gameId);
+      if (!game) return;
+      
+      console.log(`Player ${playerInfo.playerName} is exiting game ${playerInfo.gameId}`);
+      
+      // Initialize exitedPlayers array if it doesn't exist
+      if (!game.exitedPlayers) {
+        game.exitedPlayers = new Set();
+      }
+      
+      // Add player to exited players list
+      game.exitedPlayers.add(playerInfo.playerId);
+      
+      // Reset inactivity timer since there's activity
+      resetInactivityTimer(playerInfo.gameId);
+      
+      // Check if all players have exited
+      const allPlayersExited = game.players.every(player => 
+        game.exitedPlayers.has(player.id) || !player.connected
+      );
+      
+      if (allPlayersExited) {
+        console.log(`All players exited game ${playerInfo.gameId}, closing game`);
+        await closeGame(playerInfo.gameId, 'All players exited');
+      } else {
+        // Just remove this player and update game state
+        removePlayerFromGame(playerInfo.gameId, playerInfo.playerId);
+        
+        // Notify remaining players
+        io.to(playerInfo.gameId).emit('player-disconnected', { 
+          playerName: playerInfo.playerName,
+          reason: 'exited'
+        });
+      }
+      
+      // Remove player from socket tracking
+      players.delete(socket.id);
+      socket.leave(playerInfo.gameId);
+      
+    } catch (error) {
+      console.error('Error handling player exit:', error);
+    }
+  });
+
   // Handle player actions
   socket.on('player-action', (data) => {
     const playerInfo = players.get(socket.id);
@@ -317,6 +369,9 @@ io.on('connection', (socket) => {
     
     const game = activeGameStates.get(playerInfo.gameId);
     if (!game || game.status !== 'playing') return;
+    
+    // Reset inactivity timer since there's activity
+    resetInactivityTimer(playerInfo.gameId);
     
     const { action, resource, amount, targetPlayer } = data;
     const player = game.players.find(p => p.id === playerInfo.playerId);
@@ -416,8 +471,85 @@ io.on('connection', (socket) => {
   });
 });
 
+// Helper function to remove player from game
+function removePlayerFromGame(gameId, playerId) {
+  const game = activeGameStates.get(gameId);
+  if (!game) return;
+  
+  game.players = game.players.filter(p => p.id !== playerId);
+  activeGameStates.set(gameId, game);
+}
+
+// Helper function to close and cleanup a game
+async function closeGame(gameId, reason = 'Game closed') {
+  try {
+    console.log(`Closing game ${gameId}: ${reason}`);
+    
+    // Clear any timers
+    const timer = gameTimers.get(gameId);
+    if (timer) {
+      clearInterval(timer);
+      gameTimers.delete(gameId);
+    }
+    
+    const inactivityTimer = inactivityTimers.get(gameId);
+    if (inactivityTimer) {
+      clearTimeout(inactivityTimer);
+      inactivityTimers.delete(gameId);
+    }
+    
+    // Notify all remaining players
+    io.to(gameId).emit('game-closed', { reason });
+    
+    // Remove from active games
+    activeGameStates.delete(gameId);
+    
+    // Update database status
+    await GameDatabase.updateGameStatus(gameId, 'closed');
+    
+    // Disconnect all sockets from this room
+    const room = io.sockets.adapter.rooms.get(gameId);
+    if (room) {
+      room.forEach(socketId => {
+        const socket = io.sockets.sockets.get(socketId);
+        if (socket) {
+          socket.leave(gameId);
+          // Clear player tracking for this socket
+          const playerInfo = players.get(socketId);
+          if (playerInfo && playerInfo.gameId === gameId) {
+            players.delete(socketId);
+          }
+        }
+      });
+    }
+    
+    console.log(`Game ${gameId} successfully closed and cleaned up`);
+  } catch (error) {
+    console.error(`Error closing game ${gameId}:`, error);
+  }
+}
+
+// Helper function to reset inactivity timer
+function resetInactivityTimer(gameId) {
+  // Clear existing timer
+  const existingTimer = inactivityTimers.get(gameId);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+  }
+  
+  // Set new 20-minute inactivity timer
+  const inactivityTimer = setTimeout(async () => {
+    console.log(`Game ${gameId} has been inactive for 20 minutes, auto-closing`);
+    await closeGame(gameId, 'Game closed due to 20 minutes of inactivity');
+  }, 20 * 60 * 1000); // 20 minutes
+  
+  inactivityTimers.set(gameId, inactivityTimer);
+}
+
 // Game timer function
 function startGameTimer(gameId) {
+  // Start inactivity timer when game starts
+  resetInactivityTimer(gameId);
   const timer = setInterval(async () => {
     const game = activeGameStates.get(gameId);
     if (!game || !game.timerActive) {
