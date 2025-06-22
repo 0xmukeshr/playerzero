@@ -42,33 +42,33 @@ export function PlayerStats({ players }: PlayerStatsProps) {
           return (
             <div 
               key={player.id} 
-              className="pixel-card bg-pixel-gray border-pixel-light-gray p-2 hover:bg-pixel-light-gray transition-colors"
+              className="pixel-card bg-pixel-gray border-pixel-light-gray p-3 hover:bg-pixel-light-gray transition-colors"
             >
               <div className="flex items-center justify-between">
                 {/* Rank & Player */}
                 <div className="flex items-center space-x-2">
-                  <div className="flex items-center space-x-1">
+                  <div className="flex items-center space-x-2">
                     {getRankIcon(index)}
                     <span className={`font-bold text-pixel-xs ${getRankColor(index)}`}>
                       #{index + 1}
                     </span>
                   </div>
-                  <div className="text-pixel-primary font-bold text-pixel-xs truncate max-w-[60px]">
+                  <div className="text-pixel-primary font-bold text-pixel-xs truncate max-w-[70px]">
                     {player.name.split(' ')[0]}
                   </div>
                 </div>
 
                 {/* Assets */}
-                <div className="flex items-center space-x-1">
-                  <div className="flex items-center space-x-1">
+                <div className="flex items-center space-x-2">
+                  <div className="flex items-center space-x-2">
                     <div className="w-2 h-2 bg-pixel-yellow pixel-avatar"></div>
                     <span className="text-pixel-yellow font-bold text-pixel-xs">{player.assets.gold}</span>
                   </div>
-                  <div className="flex items-center space-x-1">
+                  <div className="flex items-center space-x-2">
                     <div className="w-2 h-2 bg-pixel-blue pixel-avatar"></div>
                     <span className="text-pixel-blue font-bold text-pixel-xs">{player.assets.water}</span>
                   </div>
-                  <div className="flex items-center space-x-1">
+                  <div className="flex items-center space-x-2">
                     <div className="w-2 h-2 bg-pixel-magenta pixel-avatar"></div>
                     <span className="text-pixel-magenta font-bold text-pixel-xs">{player.assets.oil}</span>
                   </div>

@@ -275,8 +275,8 @@ export const PeerProvider: React.FC<PeerProviderProps> = ({ children }) => {
             updatedState.winner = playersWithScores[0];
             updatedState.rankings = playersWithScores;
             
-            // Don't add game finish messages to recent actions
-            // Recent actions should only contain player trading actions
+            // Clear recent actions since game is finished
+            updatedState.recentActions = [];
             
             if (gameTimerRef.current) clearInterval(gameTimerRef.current);
             if (marketTimerRef.current) clearInterval(marketTimerRef.current);
@@ -321,11 +321,21 @@ export const PeerProvider: React.FC<PeerProviderProps> = ({ children }) => {
               });
             }, 10000); // 10 second delay
           } else {
-            // New round
+            // New round - reset timer but keep actions until they can be saved
             updatedState.timeRemaining = { hours: 0, minutes: 1, seconds: 0 };
             
-            // Don't add round messages to recent actions
-            // Recent actions should only contain player trading actions
+            // Save current round actions to history before clearing
+            const previousRound = updatedState.currentRound - 1;
+            if (previousRound > 0 && updatedState.recentActions && updatedState.recentActions.length > 0) {
+              // Store actions from the previous round
+              if (!updatedState.actionHistory) {
+                updatedState.actionHistory = {};
+              }
+              updatedState.actionHistory[previousRound] = [...updatedState.recentActions];
+            }
+            
+            // Now clear recent actions for the new round
+            updatedState.recentActions = [];
             
             // Generate new market trends
             updatedState.marketChanges = updatedState.marketChanges.map((change: any) => {
@@ -634,7 +644,7 @@ export const PeerProvider: React.FC<PeerProviderProps> = ({ children }) => {
     }
   }, [gameId, gameState]);
 
-  // Real-time localStorage synchronization
+  // Real-time localStorage synchronization with improved connectivity
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
       // Only listen to game state changes for our current game
@@ -643,8 +653,14 @@ export const PeerProvider: React.FC<PeerProviderProps> = ({ children }) => {
       if (e.newValue) {
         try {
           const updatedGameState = JSON.parse(e.newValue);
-          console.log('Storage event - syncing game state:', updatedGameState);
-          setGameState(updatedGameState);
+          // Only sync if the state is actually different to prevent loops
+          const currentStateStr = JSON.stringify(gameState);
+          const updatedStateStr = JSON.stringify(updatedGameState);
+          
+          if (currentStateStr !== updatedStateStr) {
+            console.log('Storage event - syncing game state (significant change detected)');
+            setGameState(updatedGameState);
+          }
         } catch (error) {
           console.error('Failed to parse updated game state:', error);
         }
@@ -654,20 +670,26 @@ export const PeerProvider: React.FC<PeerProviderProps> = ({ children }) => {
     const handleCustomGameUpdate = (e: CustomEvent) => {
       if (!gameId || e.detail.gameId !== gameId) return;
       
-      console.log('Custom event - syncing game state:', e.detail.gameState);
-      setGameState(e.detail.gameState);
+      // Only sync if the state is actually different
+      const currentStateStr = JSON.stringify(gameState);
+      const updatedStateStr = JSON.stringify(e.detail.gameState);
+      
+      if (currentStateStr !== updatedStateStr) {
+        console.log('Custom event - syncing game state (significant change detected)');
+        setGameState(e.detail.gameState);
+      }
     };
     
     // Listen for localStorage changes from other tabs/windows
     window.addEventListener('storage', handleStorageChange);
-    // Listen for custom events from same tab/window
+    // Listen for custom events from same tab/window  
     window.addEventListener('gameStateUpdate', handleCustomGameUpdate);
     
     return () => {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('gameStateUpdate', handleCustomGameUpdate);
     };
-  }, [gameId]);
+  }, [gameId, gameState]);
   
   // Polling fallback for same-tab updates (storage event doesn't fire in same tab)
   useEffect(() => {
@@ -688,17 +710,19 @@ export const PeerProvider: React.FC<PeerProviderProps> = ({ children }) => {
           const storedActionsLength = storedGameState?.recentActions?.length || 0;
           const currentFirstAction = gameState?.recentActions?.[0] || '';
           const storedFirstAction = storedGameState?.recentActions?.[0] || '';
+          const currentStatus = gameState?.status || 'waiting';
+          const storedStatus = storedGameState?.status || 'waiting';
           
           // Only update if there are significant differences
           if (currentPlayerCount !== storedPlayerCount || 
               currentRound !== storedRound ||
-              gameState?.status !== storedGameState?.status ||
+              currentStatus !== storedStatus ||
               currentActionsLength !== storedActionsLength ||
               currentFirstAction !== storedFirstAction) {
             console.log('Polling detected important change, syncing game state:', {
               players: `${currentPlayerCount} → ${storedPlayerCount}`,
               round: `${currentRound} → ${storedRound}`,
-              status: `${gameState?.status} → ${storedGameState?.status}`
+              status: `${currentStatus} → ${storedStatus}`
             });
             setGameState(storedGameState);
           }
@@ -706,10 +730,10 @@ export const PeerProvider: React.FC<PeerProviderProps> = ({ children }) => {
       } catch (error) {
         console.error('Polling sync error:', error);
       }
-    }, 1500); // Poll every 1.5 seconds
+    }, 500); // Poll every 500ms for better responsiveness
     
     return () => clearInterval(pollInterval);
-  }, [gameId, gameState?.players?.length, gameState?.currentRound, gameState?.status]);
+  }, [gameId]);
 
   // Cleanup on unmount
   useEffect(() => {

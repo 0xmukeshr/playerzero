@@ -369,7 +369,12 @@ export function ActionPanel({
       {/* Enhanced Execute Button */}
       <div className="space-y-2">
         <button
-          onClick={onConfirmAction}
+          onClick={() => {
+            if (canPerformAction()) {
+              playSound('click');
+              onConfirmAction();
+            }
+          }}
           disabled={!canPerformAction()}
           className={`w-full px-3 py-2 pixel-btn font-bold text-pixel-sm uppercase tracking-wider ${
             canPerformAction()

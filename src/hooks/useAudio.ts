@@ -19,53 +19,46 @@ export function useAudio() {
   const webAudioRef = useRef<{
     context: AudioContext | null;
     buffers: WebAudioBuffers;
-  }>({ context: null, buffers: { click: null, rollover: null, switch: null } });
+    initialized: boolean;
+  }>({ context: null, buffers: { click: null, rollover: null, switch: null }, initialized: false });
   const indexRef = useRef<{ [key in SoundType]: number }>({
     click: 0,
     rollover: 0,
     switch: 0
   });
 
+  // Initialize Web Audio API for ultra-low latency clicks
+  const initWebAudio = () => {
+    if (webAudioRef.current.initialized) return;
+    
+    try {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      webAudioRef.current.context = audioContext;
+      webAudioRef.current.initialized = true;
+      
+      // Load all sounds as AudioBuffers for instant playback
+      const loadAudioBuffer = (url: string, soundType: keyof WebAudioBuffers) => {
+        fetch(url)
+          .then(response => response.arrayBuffer())
+          .then(arrayBuffer => audioContext.decodeAudioData(arrayBuffer))
+          .then(audioBuffer => {
+            webAudioRef.current.buffers[soundType] = audioBuffer;
+          })
+          .catch(() => {
+            // Silent fail for buffer loading
+          });
+      };
+      
+      loadAudioBuffer('/audio/click1.ogg', 'click');
+      loadAudioBuffer('/audio/rollover5.ogg', 'rollover');
+      loadAudioBuffer('/audio/switch24.ogg', 'switch');
+    } catch (error) {
+      // Web Audio API not supported, will use HTML Audio fallback
+    }
+  };
+
   useEffect(() => {
     if (!audioRef.current) {
-      // Initialize Web Audio API for ultra-low latency clicks
-      const initWebAudio = () => {
-        try {
-          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-          webAudioRef.current.context = audioContext;
-          
-          // Load all sounds as AudioBuffers for instant playback
-          const loadAudioBuffer = (url: string, soundType: keyof WebAudioBuffers) => {
-            fetch(url)
-              .then(response => response.arrayBuffer())
-              .then(arrayBuffer => audioContext.decodeAudioData(arrayBuffer))
-              .then(audioBuffer => {
-                webAudioRef.current.buffers[soundType] = audioBuffer;
-              })
-              .catch(() => {
-                // Silent fail for buffer loading
-              });
-          };
-          
-          loadAudioBuffer('/audio/click1.ogg', 'click');
-          loadAudioBuffer('/audio/rollover5.ogg', 'rollover');
-          loadAudioBuffer('/audio/switch24.ogg', 'switch');
-        } catch (error) {
-          // Web Audio API not supported, will use HTML Audio fallback
-        }
-      };
-      
-      // Initialize on first user interaction
-      const initOnInteraction = () => {
-        initWebAudio();
-        document.removeEventListener('click', initOnInteraction);
-        document.removeEventListener('keydown', initOnInteraction);
-        document.removeEventListener('touchstart', initOnInteraction);
-      };
-      
-      document.addEventListener('click', initOnInteraction);
-      document.addEventListener('keydown', initOnInteraction);
-      document.addEventListener('touchstart', initOnInteraction);
       
       // Create multiple instances of each audio for rapid-fire clicking (fallback)
       audioRef.current = {
@@ -92,34 +85,20 @@ export function useAudio() {
           audio.currentTime = 0;
         });
         
-        // Prime the audio context on first interaction
-        const primeAudio = () => {
-          if (audio.readyState >= 2) { // HAVE_CURRENT_DATA
-            audio.currentTime = 0;
-            const playPromise = audio.play();
-            if (playPromise) {
-              playPromise.then(() => {
-                // Immediately pause and reset for actual use
-                setTimeout(() => {
-                  audio.pause();
-                  audio.currentTime = 0;
-                }, 1);
-              }).catch(() => {
-                // Silent fail during priming
-              });
-            }
-          }
-        };
-        
-        // Multiple event listeners to ensure priming happens
-        document.addEventListener('click', primeAudio, { once: true });
-        document.addEventListener('keydown', primeAudio, { once: true });
-        document.addEventListener('touchstart', primeAudio, { once: true });
+        // Simple error handler for loading
+        audio.addEventListener('error', () => {
+          console.warn(`Failed to load audio: ${audio.src}`);
+        });
       });
     }
   }, []);
 
   const playSound = (soundType: SoundType) => {
+    // Initialize Web Audio on first actual use
+    if (!webAudioRef.current.initialized) {
+      initWebAudio();
+    }
+    
     // Use Web Audio API for ultra-low latency on all sounds
     if (webAudioRef.current.context && webAudioRef.current.buffers[soundType]) {
       try {

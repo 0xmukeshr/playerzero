@@ -23,33 +23,64 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
   const [targetPlayer, setTargetPlayer] = useState<string>('');
   const [gameStarted, setGameStarted] = useState(false);
   const [notifications, setNotifications] = useState<string[]>([]);
-  const [actionsByRound, setActionsByRound] = useState<{ [round: number]: string[] }>({});
+  // Use actionHistory from game state instead of local state
   const [previousPlayerCount, setPreviousPlayerCount] = useState(0);
   const [previousRecentActions, setPreviousRecentActions] = useState<string[]>([]);
   const [showWinnerModal, setShowWinnerModal] = useState(false);
   const [gameFinished, setGameFinished] = useState(false);
 
+  // Separate effect for basic player and game state updates
   useEffect(() => {
     if (gameState) {
       const player = gameState.players.find((p: any) => p.id === playerId);
       setCurrentPlayer(player || null);
       setGameStarted(gameState.status === 'playing');
+    }
+  }, [gameState, playerId]);
+  
+  // Get actionsByRound from game state - combine actionHistory with current round actions
+  const actionsByRound = React.useMemo(() => {
+    if (!gameState) return {};
+    
+    const combined = { ...gameState.actionHistory };
+    
+    // Add current round actions if any exist
+    if (gameState.recentActions && gameState.recentActions.length > 0 && gameState.currentRound) {
+      combined[gameState.currentRound] = gameState.recentActions;
+    }
+    
+    return combined;
+  }, [gameState?.actionHistory, gameState?.recentActions, gameState?.currentRound]);
+  
+  // Separate effect for player count changes to avoid dependency loops
+  useEffect(() => {
+    if (gameState && gameState.players) {
+      const currentPlayerCount = gameState.players.length;
       
       // Check for new players joining (only if we had a previous count)
-      if (previousPlayerCount > 0 && gameState.players.length > previousPlayerCount) {
-        const newPlayer = gameState.players[gameState.players.length - 1];
+      if (previousPlayerCount > 0 && currentPlayerCount > previousPlayerCount) {
+        const newPlayer = gameState.players[currentPlayerCount - 1];
         if (newPlayer.id !== playerId) {
           addNotification(`🎮 ${newPlayer.name} joined the game!`);
           playSound('switch');
         }
       }
       
-      // Update previous player count
-      setPreviousPlayerCount(gameState.players.length);
+      // Update previous player count only if it changed
+      if (currentPlayerCount !== previousPlayerCount) {
+        setPreviousPlayerCount(currentPlayerCount);
+      }
+    }
+  }, [gameState?.players?.length, playerId]);
+  
+  // Separate effect for action changes to prevent sound spam
+  useEffect(() => {
+    if (gameState && gameState.recentActions && gameState.recentActions.length > 0) {
+      const currentActions = gameState.recentActions;
       
-      // Check for new actions (only if we had previous actions)
-      if (previousRecentActions.length > 0 && gameState.recentActions && gameState.recentActions.length > 0) {
-        const latestAction = gameState.recentActions[0];
+      // Check for new actions (only if we had previous actions and game is playing)
+      if (previousRecentActions.length > 0 && gameState.status === 'playing') {
+        const latestAction = currentActions[0];
         const wasLatestAction = previousRecentActions[0];
         
         // If there's a new action at the top of the list
@@ -58,27 +89,29 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
           const isMyAction = latestAction.includes(playerName || '');
           
           if (!isMyAction) {
-            // Show notification for other players' actions
+            // Show notification for other players' actions (no sound)
             addNotification(`⚡ ${latestAction}`);
-            playSound('click');
+            // Only play sound for significant actions, not every action
+            if (latestAction.includes('sabotaged') || latestAction.includes('burned')) {
+              playSound('switch');
+            }
           }
         }
       }
       
-      // Update previous recent actions
-      setPreviousRecentActions(gameState.recentActions || []);
-      
-      // Update actions by round
-      if (gameState.recentActions && gameState.currentRound) {
-        setActionsByRound(prev => ({
-          ...prev,
-          [gameState.currentRound]: gameState.recentActions
-        }));
+      // Update previous recent actions only if they changed
+      const actionsChanged = JSON.stringify(currentActions) !== JSON.stringify(previousRecentActions);
+      if (actionsChanged) {
+        setPreviousRecentActions(currentActions);
       }
-      
+    }
+  }, [gameState?.recentActions, playerName, gameState?.status]);
+  
+  // Separate effect for game finish status to prevent infinite loops
+  useEffect(() => {
+    if (gameState) {
       // Check if game finished
       if (gameState.status === 'finished' && !gameFinished) {
-        setGameStarted(false);
         setGameFinished(true);
         setShowWinnerModal(true);
         
@@ -97,11 +130,10 @@ export function GameInterface({ onExitGame }: GameInterfaceProps) {
       if (gameState.status === 'waiting' && gameFinished) {
         setGameFinished(false);
         setShowWinnerModal(false);
-        setGameStarted(false);
         addNotification('🔄 Ready for rematch!');
       }
     }
-  }, [gameState, playerId, playerName, playSound, previousPlayerCount, previousRecentActions]);
+  }, [gameState?.status, gameState?.winner?.name, gameState?.winner?.finalScore, gameFinished]);
 
   const addNotification = (message: string) => {
     setNotifications(prev => [message, ...prev.slice(0, 4)]);

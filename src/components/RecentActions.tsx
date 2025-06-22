@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useAudio } from '../hooks/useAudio';
 
 interface RecentActionsProps {
   actions: string[];
@@ -9,22 +10,19 @@ interface RecentActionsProps {
 
 export function RecentActions({ actions, currentRound, maxRounds, actionsByRound = {} }: RecentActionsProps) {
   const [selectedRound, setSelectedRound] = useState<number>(currentRound);
+  const { playSound } = useAudio();
   
-  // Auto-switch to current round when round changes
+  // Auto-switch to current round when round changes, but don't play sound
   useEffect(() => {
     setSelectedRound(currentRound);
   }, [currentRound]);
   
-  // Get actions for the selected round, fallback to current actions if not available
-  const displayActions = actionsByRound[selectedRound] || (selectedRound === currentRound ? actions : []);
+  // Get actions for the selected round only from actionsByRound
+  const displayActions = actionsByRound[selectedRound] || [];
   
-  // Generate round options (only show rounds that have actions or current round)
-  const availableRounds = Array.from(
-    new Set([
-      ...Object.keys(actionsByRound).map(Number),
-      currentRound
-    ])
-  ).sort((a, b) => b - a); // Sort descending (most recent first)
+  // Generate round options (show ALL rounds from 1 to current round)
+  const availableRounds = Array.from({ length: currentRound }, (_, i) => i + 1)
+    .sort((a, b) => b - a); // Sort descending (most recent first)
 
   return (
     <div className="bg-pixel-dark-gray pixel-panel border-pixel-gray overflow-hidden">
@@ -47,22 +45,25 @@ export function RecentActions({ actions, currentRound, maxRounds, actionsByRound
           <label className="text-pixel-xs font-bold text-pixel-base-gray uppercase tracking-wider whitespace-nowrap">Round:</label>
           <select 
             value={selectedRound}
-            onChange={(e) => setSelectedRound(Number(e.target.value))}
+            onChange={(e) => {
+              playSound('click');
+              setSelectedRound(Number(e.target.value));
+            }}
             className="flex-1 bg-pixel-gray border-2 border-pixel-base-gray text-pixel-xs text-pixel-base-gray font-bold p-1 pixel-card uppercase tracking-wider focus:border-pixel-primary focus:outline-none"
           >
             {availableRounds.map(round => (
               <option key={round} value={round} className="bg-pixel-gray">
-                Round {round} {round === currentRound ? '(Current)' : ''}
+                Round {round}{round === currentRound ?'(Current)' : ''} (*{actionsByRound[round]?.length || 0})
               </option>
             ))}
           </select>
         </div>
         
-        {/* Actions in wider grid layout */}
+        {/* Actions in original two-row grid layout */}
         {displayActions.length > 0 ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
             {displayActions.slice(0, 6).map((action, index) => (
-              <div key={index} className="pixel-card bg-pixel-gray border-pixel-base-gray p-2 hover:bg-pixel-base-gray transition-colors">
+              <div key={`${selectedRound}-${index}`} className="pixel-card bg-pixel-gray border-pixel-base-gray p-2 hover:bg-pixel-base-gray transition-colors">
                 <div className="text-pixel-xs text-pixel-base-gray font-bold leading-tight">
                   {action.length > 45 ? action.substring(0, 42) + '...' : action}
                 </div>
@@ -77,7 +78,10 @@ export function RecentActions({ actions, currentRound, maxRounds, actionsByRound
             <div className="text-pixel-sm text-pixel-base-gray font-bold mb-2">
             </div>
             <div className="text-pixel-xs text-pixel-base-gray font-bold">
-              No actions this round yet. Make the first move!
+              {selectedRound === currentRound 
+                ? "No actions this round yet. Make the first move!" 
+                : `No actions recorded for Round ${selectedRound}`
+              }
             </div>
           </div>
         )}
