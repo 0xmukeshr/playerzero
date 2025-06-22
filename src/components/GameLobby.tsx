@@ -21,7 +21,7 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
   const { playSound } = useAudio();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
-  const [playerName, setPlayerName] = useState('');
+  const [userProfile, setUserProfile] = useState<{ name: string; wallet: string; avatar: string } | null>(null);
   const [gameName, setGameName] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
   const [createdGameId, setCreatedGameId] = useState<string | null>(null);
@@ -34,7 +34,19 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
   const [showJoinPublicModal, setShowJoinPublicModal] = useState(false);
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
   const [selectedGameName, setSelectedGameName] = useState<string>('');
-  const [joinPublicPlayerName, setJoinPublicPlayerName] = useState('');
+
+  // Load user profile on mount
+  useEffect(() => {
+    const existingProfile = localStorage.getItem('userProfile');
+    if (existingProfile) {
+      try {
+        const profile = JSON.parse(existingProfile);
+        setUserProfile(profile);
+      } catch (error) {
+        console.error('Error loading profile:', error);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     // Load public games on mount
@@ -84,13 +96,12 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
   };
 
   const handleCreateGame = () => {
-    if (gameName.trim() && playerName.trim()) {
+    if (gameName.trim() && userProfile?.name) {
       try {
-        createGame(gameName.trim(), playerName.trim(), isPrivate);
+        createGame(gameName.trim(), userProfile.name, isPrivate);
         // Close the modal and refresh games
         setShowCreateModal(false);
         setGameName('');
-        setPlayerName('');
         setIsPrivate(false);
         loadPublicGames();
         // Navigate to game immediately
@@ -102,33 +113,9 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
   };
 
   const handleJoinPublicGame = (gameId: string, gameName?: string) => {
-    if (playerName.trim()) {
+    if (userProfile?.name) {
       try {
-        joinGame(gameId, playerName.trim());
-        onPlayGame();
-      } catch (error: any) {
-        setError(error.message);
-      }
-    } else {
-      // Show custom modal for player name input
-      const game = publicGames.find(g => g.id === gameId);
-      setSelectedGameId(gameId);
-      setSelectedGameName(game?.name || 'Unknown Game');
-      setShowJoinPublicModal(true);
-    }
-  };
-
-  const handleConfirmJoinPublicGame = () => {
-    if (joinPublicPlayerName.trim() && selectedGameId) {
-      try {
-        setPlayerName(joinPublicPlayerName.trim());
-        joinGame(selectedGameId, joinPublicPlayerName.trim());
-        
-        // Close modal and reset state
-        setShowJoinPublicModal(false);
-        setSelectedGameId(null);
-        setSelectedGameName('');
-        setJoinPublicPlayerName('');
+        joinGame(gameId, userProfile.name);
         onPlayGame();
       } catch (error: any) {
         setError(error.message);
@@ -136,17 +123,11 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
     }
   };
 
-  const handleCloseJoinPublicModal = () => {
-    setShowJoinPublicModal(false);
-    setSelectedGameId(null);
-    setSelectedGameName('');
-    setJoinPublicPlayerName('');
-  };
 
   const handleJoinById = () => {
-    if (joinGameId.trim() && playerName.trim()) {
+    if (joinGameId.trim() && userProfile?.name) {
       try {
-        joinGame(joinGameId.trim(), playerName.trim());
+        joinGame(joinGameId.trim(), userProfile.name);
         onPlayGame();
       } catch (error: any) {
         setJoinError(error.message);
@@ -170,7 +151,6 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
     setShowCreateModal(false);
     setCreatedGameId(null);
     setGameName('');
-    setPlayerName('');
     setCopySuccess(false);
     setError('');
   };
@@ -179,7 +159,6 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
     setShowJoinModal(false);
     setJoinGameId('');
     setJoinError('');
-    setPlayerName('');
     setError('');
   };
 
@@ -362,14 +341,16 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
             
             {!createdGameId ? (
               <>
-                <input
-                  type="text"
-                  value={playerName}
-                  onChange={(e) => setPlayerName(e.target.value)}
-                  placeholder="Enter your name"
-                  className="w-full px-4 py-3 text-pixel-base font-bold bg-pixel-dark-gray text-pixel-base-gray border-4 border-pixel-gray focus:border-pixel-primary focus:outline-none mb-4"
-                  maxLength={20}
-                />
+                {/* Show player info */}
+                <div className="bg-pixel-gray pixel-panel border-pixel-light-gray p-3 mb-4">
+                  <div className="flex items-center space-x-3">
+                    <div className="text-2xl">{userProfile?.avatar}</div>
+                    <div>
+                      <div className="text-pixel-sm font-bold text-pixel-accent">{userProfile?.name}</div>
+                      <div className="text-pixel-xs text-pixel-light-gray">Player</div>
+                    </div>
+                  </div>
+                </div>
                 
                 <input
                   type="text"
@@ -403,7 +384,7 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
                       playSound('click');
                       handleCreateGame();
                     }}
-                    disabled={!gameName.trim() || !playerName.trim()}
+                    disabled={!gameName.trim() || !userProfile?.name}
                     className="flex-1 px-6 py-3 bg-pixel-primary hover:bg-pixel-success text-pixel-black font-bold text-pixel-base pixel-btn border-pixel-black uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Create
@@ -492,21 +473,16 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
               </div>
             )}
             
-            <input
-              type="text"
-              value={playerName}
-              onChange={(e) => {
-                setPlayerName(e.target.value);
-                if (joinError) setJoinError(''); // Reset error when typing
-              }}
-              placeholder="Enter your name"
-              className={`w-full px-4 py-3 text-pixel-base font-bold border-4 focus:outline-none mb-4 ${
-                joinError 
-                  ? 'bg-pixel-dark-gray text-pixel-error border-pixel-error focus:border-pixel-error'
-                  : 'bg-pixel-dark-gray text-pixel-base-gray border-pixel-gray focus:border-pixel-primary'
-              }`}
-              maxLength={20}
-            />
+            {/* Show player info */}
+            <div className="bg-pixel-gray pixel-panel border-pixel-light-gray p-3 mb-4">
+              <div className="flex items-center space-x-3">
+                <div className="text-2xl">{userProfile?.avatar}</div>
+                <div>
+                  <div className="text-pixel-sm font-bold text-pixel-accent">{userProfile?.name}</div>
+                  <div className="text-pixel-xs text-pixel-light-gray">Player</div>
+                </div>
+              </div>
+            </div>
             
             <input
               type="text"
@@ -530,7 +506,7 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
                   playSound('click');
                   handleJoinById();
                 }}
-                disabled={!joinGameId.trim() || !playerName.trim()}
+                disabled={!joinGameId.trim() || !userProfile?.name}
                 className={`flex-1 px-6 py-3 font-bold text-pixel-base pixel-btn uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed ${
                   joinError
                     ? 'bg-pixel-black hover:bg-pixel-dark-gray text-pixel-error border-pixel-error'
@@ -557,67 +533,6 @@ export function GameLobby({ onPlayGame }: GameLobbyProps) {
         </div>
       )}
 
-      {/* Join Public Game Modal */}
-      {showJoinPublicModal && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-75 z-50">
-          <div className="bg-pixel-light-gray p-8 pixel-panel border-pixel-black max-w-md w-full mx-4">
-            <h3 className="text-pixel-xl font-bold text-pixel-primary text-center mb-2 uppercase tracking-wider">
-              Join Game
-            </h3>
-            <p className="text-pixel-base text-pixel-base-gray text-center mb-6">
-              "{selectedGameName}"
-            </p>
-            
-            {error && (
-              <div className="bg-pixel-error p-3 pixel-panel border-pixel-error mb-4">
-                <p className="text-pixel-black text-pixel-sm font-bold text-center">
-                  {error}
-                </p>
-              </div>
-            )}
-            
-            <input
-              type="text"
-              value={joinPublicPlayerName}
-              onChange={(e) => setJoinPublicPlayerName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && joinPublicPlayerName.trim()) {
-                  handleConfirmJoinPublicGame();
-                }
-                if (e.key === 'Escape') {
-                  handleCloseJoinPublicModal();
-                }
-              }}
-              placeholder="Enter your name"
-              className="w-full px-4 py-3 text-pixel-base font-bold bg-pixel-dark-gray text-pixel-base-gray border-4 border-pixel-gray focus:border-pixel-primary focus:outline-none mb-6"
-              maxLength={20}
-              autoFocus
-            />
-            
-            <div className="flex space-x-4">
-              <button
-                onClick={() => {
-                  playSound('click');
-                  handleConfirmJoinPublicGame();
-                }}
-                disabled={!joinPublicPlayerName.trim()}
-                className="flex-1 px-6 py-3 bg-pixel-primary hover:bg-pixel-success text-pixel-black font-bold text-pixel-base pixel-btn border-pixel-black uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Join Game
-              </button>
-              <button
-                onClick={() => {
-                  playSound('click');
-                  handleCloseJoinPublicModal();
-                }}
-                className="flex-1 px-6 py-3 bg-pixel-gray hover:bg-pixel-light-gray text-pixel-primary font-bold text-pixel-base pixel-btn border-pixel-gray uppercase tracking-wider"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

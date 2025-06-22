@@ -1,5 +1,5 @@
-import React from 'react';
-import { Bell, Sword } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Bell, Sword, User } from 'lucide-react';
 import { useAudio } from '../hooks/useAudio';
 
 interface HeaderProps {
@@ -9,6 +9,38 @@ interface HeaderProps {
 
 export function Header({ currentPage, onNavigate }: HeaderProps) {
   const { playSound } = useAudio();
+  const [userProfile, setUserProfile] = useState<{ name: string; wallet: string; avatar: string } | null>(null);
+  
+  // Load user profile from localStorage
+  useEffect(() => {
+    const loadProfile = () => {
+      const existingProfile = localStorage.getItem('userProfile');
+      if (existingProfile) {
+        try {
+          const profile = JSON.parse(existingProfile);
+          setUserProfile(profile);
+        } catch (error) {
+          console.error('Error loading profile in header:', error);
+        }
+      }
+    };
+    
+    loadProfile();
+    
+    // Listen for profile changes (when profile is created)
+    const handleStorageChange = () => {
+      loadProfile();
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    // Also listen for custom event when profile is created in same tab
+    window.addEventListener('profileUpdated', handleStorageChange);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('profileUpdated', handleStorageChange);
+    };
+  }, []);
   
   const navItems = [
     { id: 'home', label: 'Home' },
@@ -52,9 +84,30 @@ export function Header({ currentPage, onNavigate }: HeaderProps) {
             </div>
             <div className="absolute -top-1 -right-1 w-3 h-3 bg-pixel-error pixel-avatar animate-blink"></div>
           </div>
-          <div className="w-10 h-10 bg-pixel-accent pixel-avatar flex items-center justify-center">
-            <span className="text-pixel-black text-pixel-sm font-bold">JD</span>
-          </div>
+          
+          {/* User Profile Display */}
+          {userProfile ? (
+            <div className="flex items-center space-x-3">
+              {/* User Avatar and Name */}
+              <div className="flex items-center space-x-2">
+                <div className="w-10 h-10 bg-pixel-accent pixel-avatar flex items-center justify-center text-xl">
+                  {userProfile.avatar}
+                </div>
+                <div className="hidden md:block">
+                  <div className="text-pixel-xs font-bold text-pixel-primary uppercase">
+                    {userProfile.name}
+                  </div>
+                  <div className="text-pixel-xs text-pixel-gray font-mono">
+                    {userProfile.wallet.substring(0, 6)}...{userProfile.wallet.substring(userProfile.wallet.length - 4)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="w-10 h-10 bg-pixel-gray pixel-avatar flex items-center justify-center">
+              <User className="w-5 h-5 text-pixel-light-gray" />
+            </div>
+          )}
         </div>
       </div>
     </header>
